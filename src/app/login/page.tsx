@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { PasswordField } from "@/components/PasswordField";
 
 export default function LoginPage() {
@@ -17,7 +18,7 @@ export default function LoginPage() {
     // Mobile Safari / password managers often autofill without firing onChange.
     const form = e.currentTarget;
     const data = new FormData(form);
-    const nextEmail = String(data.get("email") ?? email).trim();
+    const nextEmail = String(data.get("email") ?? email).trim().toLowerCase();
     const nextPassword = String(data.get("password") ?? password);
     setEmail(nextEmail);
     setPassword(nextPassword);
@@ -29,28 +30,44 @@ export default function LoginPage() {
     }
 
     try {
-      // Server sets auth cookies on the response — more reliable on mobile /
-      // LAN HTTP than client-side createBrowserClient cookie writes.
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: nextEmail, password: nextPassword }),
+      // Prefer browser client — sets auth cookies in the browser (works on Vercel HTTPS).
+      const supabase = createClient();
+      const { error: signError } = await supabase.auth.signInWithPassword({
+        email: nextEmail,
+        password: nextPassword,
       });
-      const json = (await res.json().catch(() => ({}))) as {
-        error?: string;
-        ok?: boolean;
-      };
 
-      if (!res.ok) {
-        setError(json.error || "Could not sign in. Check your email and password.");
-        setBusy(false);
-        return;
+      if (signError) {
+        // Fallback: server route (helps some HTTP/LAN cases)
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: nextEmail, password: nextPassword }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string;
+        };
+
+        if (!res.ok) {
+          setError(
+            json.error ||
+              signError.message ||
+              `Could not sign in (${res.status}).`,
+          );
+          setBusy(false);
+          return;
+        }
       }
 
       void fetch("/api/activity/login", { method: "POST" }).catch(() => null);
       window.location.assign("/");
-    } catch {
-      setError("Could not reach the sign-in service. Check your connection.");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not reach the sign-in service. Check your connection.",
+      );
       setBusy(false);
     }
   }

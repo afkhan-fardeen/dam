@@ -8,7 +8,38 @@ type Body = {
   password?: string;
 };
 
+function publicAuthError(message: string, code?: string): string {
+  const lower = message.toLowerCase();
+  if (
+    code === "invalid_credentials" ||
+    lower.includes("invalid login") ||
+    lower.includes("invalid credentials")
+  ) {
+    return "Could not sign in. Check your email and password.";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "Email is not confirmed yet. Ask an admin to confirm the account.";
+  }
+  if (lower.includes("too many requests")) {
+    return "Too many sign-in attempts. Wait a minute and try again.";
+  }
+  return message || "Could not sign in.";
+}
+
 export async function POST(request: NextRequest) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return NextResponse.json(
+      {
+        error:
+          "Auth is not configured on this deployment. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.",
+        code: "missing_env",
+      },
+      { status: 503 },
+    );
+  }
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -16,7 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const email = body.email?.trim() ?? "";
+  const email = body.email?.trim().toLowerCase() ?? "";
   const password = body.password ?? "";
   if (!email || !password) {
     return NextResponse.json(
@@ -28,10 +59,8 @@ export async function POST(request: NextRequest) {
   const isHttps = request.nextUrl.protocol === "https:";
   const success = NextResponse.json({ ok: true });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  try {
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -40,28 +69,37 @@ export async function POST(request: NextRequest) {
           cookiesToSet.forEach(({ name, value, options }) => {
             success.cookies.set(name, value, {
               ...options,
-              // LAN / HTTP mobile access cannot use Secure cookies.
-              secure: isHttps ? options.secure : false,
+              secure: isHttps ? (options.secure ?? true) : false,
               sameSite: options.sameSite ?? "lax",
               path: options.path ?? "/",
             });
           });
         },
       },
-    },
-  );
+    });
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-  if (error) {
+    if (error) {
+      return NextResponse.json(
+        {
+          error: publicAuthError(error.message, error.code),
+          code: error.code ?? "auth_error",
+        },
+        { status: 401 },
+      );
+    }
+
+    return success;
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Sign-in failed unexpectedly.";
     return NextResponse.json(
-      { error: "Could not sign in. Check your email and password." },
-      { status: 401 },
+      { error: message, code: "server_error" },
+      { status: 500 },
     );
   }
-
-  return success;
 }
