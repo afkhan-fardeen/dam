@@ -1,0 +1,414 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Asset, Tag } from "@/lib/types";
+import { getBlockedFolderIds } from "@/lib/folderAccess";
+
+function emptyToNull(value: string | null | undefined): string | null {
+  if (!value || value.trim() === "") return null;
+  return value;
+}
+
+const ASSET_COLS =
+  "id,file_id,original_name,mime_type,size,space_id,folder_id,description,created_by,uploaded_by,has_thumbnail,status,created_at,tags_text";
+
+export async function attachTags(
+  supabase: SupabaseClient,
+  assets: Asset[],
+): Promise<Asset[]> {
+  if (assets.length === 0) return assets;
+  const ids = assets.map((a) => a.id);
+
+  // Two-step load avoids fragile nested embeds (tags often looked "unsaved").
+  const { data: links, error: linkError } = await supabase
+    .from("asset_tags")
+    .select("asset_id,tag_id")
+    .in("asset_id", ids);
+  if (linkError) throw linkError;
+  if (!links?.length) {
+    return assets.map((a) => ({ ...a, tags: a.tags ?? [] }));
+  }
+
+  const tagIds = [...new Set(links.map((r) => r.tag_id as string))];
+  const { data: tagRows, error: tagError } = await supabase
+    .from("tags")
+    .select("id,name,created_at")
+    .in("id", tagIds);
+  if (tagError) throw tagError;
+
+  const tagById = new Map(
+    (tagRows ?? []).map((t) => [
+      t.id as string,
+      {
+        id: t.id as string,
+        name: t.name as string,
+        created_at: (t.created_at as string) ?? null,
+      } satisfies Tag,
+    ]),
+  );
+
+  const byAsset = new Map<string, Tag[]>();
+  for (const row of links) {
+    const tag = tagById.get(row.tag_id as string);
+    if (!tag) continue;
+    const list = byAsset.get(row.asset_id as string) ?? [];
+    list.push(tag);
+    byAsset.set(row.asset_id as string, list);
+  }
+
+  return assets.map((a) => ({
+    ...a,
+    tags: byAsset.get(a.id) ?? [],
+  }));
+}
+
+export async function attachFavorites(
+  supabase: SupabaseClient,
+  userId: string,
+  assets: Asset[],
+): Promise<Asset[]> {
+  if (assets.length === 0) return assets;
+  const ids = assets.map((a) => a.id);
+  const { data } = await supabase
+    .from("asset_favorites")
+    .select("asset_id")
+    .eq("user_id", userId)
+    .in("asset_id", ids);
+
+  const starred = new Set((data ?? []).map((r) => r.asset_id as string));
+  return assets.map((a) => ({
+    ...a,
+    favorited: starred.has(a.id),
+  }));
+}
+
+/** Ensure tag rows exist and link them to the asset. Replaces existing links when replace=true. */
+export async function setAssetTags(
+  supabase: SupabaseClient,
+  assetId: string,
+  tagNames: string[],
+  replace = true,
+): Promise<void> {
+  // Dedupe case-insensitively, keep first spelling
+  const cleaned: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of tagNames) {
+    const name = raw.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(name);
+  }
+
+  if (replace) {
+    const { error: delError } = await supabase
+      .from("asset_tags")
+      .delete()
+      .eq("asset_id", assetId);
+    if (delError) throw delError;
+  }
+
+  if (cleaned.length === 0) return;
+
+  const tagIds: string[] = [];
+  for (const name of cleaned) {
+    // Exact case-insensitive match (escape LIKE wildcards).
+    const pattern = name.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+    const { data: existingRows, error: findError } = await supabase
+      .from("tags")
+      .select("id,name")
+      .ilike("name", pattern)
+      .limit(5);
+    if (findError) throw findError;
+    const existing = (existingRows ?? []).find(
+      (row) => String(row.name).toLowerCase() === name.toLowerCase(),
+    );
+    if (existing?.id) {
+      tagIds.push(existing.id);
+      continue;
+    }
+    const { data: created, error } = await supabase
+      .from("tags")
+      .insert({ name })
+      .select("id")
+      .single();
+    if (error) {
+      // Race: another request created the same name — fetch it
+      const { data: raced } = await supabase
+        .from("tags")
+        .select("id,name")
+        .ilike("name", pattern)
+        .limit(5);
+      const hit = (raced ?? []).find(
+        (row) => String(row.name).toLowerCase() === name.toLowerCase(),
+      );
+      if (hit?.id) {
+        tagIds.push(hit.id);
+        continue;
+      }
+      throw error;
+    }
+    if (!created) throw new Error("Could not create tag");
+    tagIds.push(created.id);
+  }
+
+  const { error: linkError } = await supabase.from("asset_tags").upsert(
+    tagIds.map((tag_id) => ({ asset_id: assetId, tag_id })),
+    { onConflict: "asset_id,tag_id" },
+  );
+  if (linkError) throw linkError;
+}
+
+/** Resolve asset ids that have a tag (case-insensitive exact name). */
+async function assetIdsForTag(
+  supabase: SupabaseClient,
+  tagName: string,
+): Promise<string[]> {
+  const { data: tagRows, error: tagError } = await supabase
+    .from("tags")
+    .select("id")
+    .ilike("name", tagName);
+  if (tagError) throw tagError;
+  if (!tagRows?.length) return [];
+
+  const { data: links, error: linkError } = await supabase
+    .from("asset_tags")
+    .select("asset_id")
+    .in(
+      "tag_id",
+      tagRows.map((t) => t.id),
+    );
+  if (linkError) throw linkError;
+  return [...new Set((links ?? []).map((r) => r.asset_id as string))];
+}
+
+export async function listFolderAssets(
+  supabase: SupabaseClient,
+  options: {
+    spaceId: string;
+    folderId: string | null;
+    tag?: string | null;
+    limit?: number;
+  },
+): Promise<Asset[]> {
+  let query = supabase
+    .from("assets")
+    .select(ASSET_COLS)
+    .eq("status", "active")
+    .eq("space_id", options.spaceId)
+    .order("created_at", { ascending: false })
+    .limit(options.limit ?? 48);
+
+  if (options.folderId) {
+    query = query.eq("folder_id", options.folderId);
+  } else {
+    query = query.is("folder_id", null);
+  }
+
+  const tag = emptyToNull(options.tag);
+  if (tag) {
+    const ids = await assetIdsForTag(supabase, tag);
+    if (ids.length === 0) return [];
+    query = query.in("id", ids);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return attachTags(supabase, (data ?? []) as Asset[]);
+}
+
+export async function listRecentAssets(
+  supabase: SupabaseClient,
+  options: {
+    spaceId?: string;
+    spaceIds?: string[];
+    tag?: string | null;
+    limit?: number;
+  },
+): Promise<Asset[]> {
+  let query = supabase
+    .from("assets")
+    .select(ASSET_COLS)
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(options.limit ?? 48);
+
+  if (options.spaceId) {
+    query = query.eq("space_id", options.spaceId);
+  } else if (options.spaceIds?.length) {
+    query = query.in("space_id", options.spaceIds);
+  }
+
+  const tag = emptyToNull(options.tag);
+  if (tag) {
+    const ids = await assetIdsForTag(supabase, tag);
+    if (ids.length === 0) return [];
+    query = query.in("id", ids);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return attachTags(supabase, (data ?? []) as Asset[]);
+}
+
+export async function listTrashAssets(
+  supabase: SupabaseClient,
+  options: { spaceId: string; limit?: number },
+): Promise<Asset[]> {
+  const { data, error } = await supabase
+    .from("assets")
+    .select(ASSET_COLS)
+    .eq("status", "deleted")
+    .eq("space_id", options.spaceId)
+    .order("created_at", { ascending: false })
+    .limit(options.limit ?? 48);
+
+  if (error) throw error;
+  return attachTags(supabase, (data ?? []) as Asset[]);
+}
+
+async function searchOneSpace(
+  supabase: SupabaseClient,
+  q: string,
+  spaceId: string,
+  tag: string | null,
+): Promise<Asset[]> {
+  const { data: ftsData, error: ftsError } = await supabase.rpc(
+    "search_assets_fts",
+    {
+      q,
+      p_space_id: spaceId,
+      tag_filter: tag,
+    },
+  );
+  if (ftsError) throw ftsError;
+
+  const ftsResults = (ftsData ?? []) as Asset[];
+  if (ftsResults.length > 0) return attachTags(supabase, ftsResults);
+
+  const { data: trgmData, error: trgmError } = await supabase.rpc(
+    "search_assets_trgm",
+    {
+      q,
+      p_space_id: spaceId,
+      tag_filter: tag,
+    },
+  );
+  if (trgmError) throw trgmError;
+  return attachTags(supabase, (trgmData ?? []) as Asset[]);
+}
+
+export async function filterUnlockedAssets(
+  supabase: SupabaseClient,
+  userId: string,
+  assets: Asset[],
+): Promise<Asset[]> {
+  if (assets.length === 0) return assets;
+
+  const spaceIds = [
+    ...new Set(assets.map((a) => a.space_id).filter(Boolean) as string[]),
+  ];
+  if (spaceIds.length === 0) return assets;
+
+  const { data: folders } = await supabase
+    .from("folders")
+    .select("id,parent_folder_id,passcode_enabled,space_id")
+    .in("space_id", spaceIds);
+
+  const rows = (folders ?? []).map((f) => ({
+    id: f.id as string,
+    parent_folder_id: (f.parent_folder_id as string | null) ?? null,
+    passcode_enabled: Boolean(f.passcode_enabled),
+  }));
+
+  const blocked = await getBlockedFolderIds(supabase, userId, rows);
+
+  return assets.filter((a) => {
+    if (!a.folder_id) return true;
+    return !blocked.has(a.folder_id);
+  });
+}
+
+/** Keep locked assets visible for search, flagged for UI. */
+export async function markLockedAssets(
+  supabase: SupabaseClient,
+  userId: string,
+  assets: Asset[],
+): Promise<Asset[]> {
+  if (assets.length === 0) return assets;
+
+  const spaceIds = [
+    ...new Set(assets.map((a) => a.space_id).filter(Boolean) as string[]),
+  ];
+  if (spaceIds.length === 0) return assets;
+
+  const { data: folders } = await supabase
+    .from("folders")
+    .select("id,parent_folder_id,passcode_enabled,space_id")
+    .in("space_id", spaceIds);
+
+  const rows = (folders ?? []).map((f) => ({
+    id: f.id as string,
+    parent_folder_id: (f.parent_folder_id as string | null) ?? null,
+    passcode_enabled: Boolean(f.passcode_enabled),
+  }));
+
+  const blocked = await getBlockedFolderIds(supabase, userId, rows);
+
+  return assets.map((a) => ({
+    ...a,
+    locked: Boolean(a.folder_id && blocked.has(a.folder_id)),
+  }));
+}
+
+export async function searchAssets(
+  supabase: SupabaseClient,
+  options: {
+    q: string;
+    spaceId?: string | null;
+    spaceIds?: string[];
+    tag?: string | null;
+    userId?: string;
+  },
+): Promise<Asset[]> {
+  const q = options.q.trim();
+  const tag = emptyToNull(options.tag);
+
+  const spaceIds =
+    options.spaceIds?.length
+      ? options.spaceIds
+      : options.spaceId
+        ? [options.spaceId]
+        : [];
+
+  if (spaceIds.length === 0) return [];
+
+  if (!q) {
+    const assets = await listRecentAssets(supabase, {
+      spaceIds,
+      tag,
+      limit: 48,
+    });
+    if (options.userId) {
+      return filterUnlockedAssets(supabase, options.userId, assets);
+    }
+    return assets;
+  }
+
+  const chunks = await Promise.all(
+    spaceIds.map((id) => searchOneSpace(supabase, q, id, tag)),
+  );
+  const seen = new Set<string>();
+  const merged: Asset[] = [];
+  for (const chunk of chunks) {
+    for (const asset of chunk) {
+      if (seen.has(asset.id)) continue;
+      seen.add(asset.id);
+      merged.push(asset);
+    }
+  }
+
+  if (options.userId) {
+    return markLockedAssets(supabase, options.userId, merged);
+  }
+  return merged;
+}

@@ -1,26 +1,146 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@plugin "daisyui" {
+  themes: light --default;
+}
+
+@plugin "daisyui/theme" {
+  name: "assethub";
+  default: true;
+  color-scheme: light;
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(97% 0 0);
+  --color-base-300: oklch(92% 0 0);
+  --color-base-content: oklch(20% 0 0);
+  --color-primary: oklch(58% 0.21 259);
+  --color-primary-content: oklch(98% 0 0);
+  --color-error: oklch(58% 0.24 25);
+  --color-success: oklch(64% 0.19 145);
+  --color-warning: oklch(75% 0.18 75);
+  --radius-selector: 0;
+  --radius-field: 0;
+  --radius-box: 0;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-box: 0;
+  --radius-field: 0;
+  --radius-selector: 0;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 300;
+}
+
+/* Type scale — JetBrains Mono (thin default, bold where needed) */
+.type-micro {
+  font-size: 10px;
+  line-height: 14px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.type-caption {
+  font-size: 11px;
+  line-height: 15px;
+  font-weight: 300;
+}
+
+.type-body {
+  font-size: 12px;
+  line-height: 17px;
+  font-weight: 300;
+}
+
+.type-label {
+  font-size: 12px;
+  line-height: 17px;
+  font-weight: 500;
+}
+
+.type-title {
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 700;
+}
+
+.type-page {
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 700;
+}
+
+.rounded,
+.rounded-sm,
+.rounded-md,
+.rounded-lg,
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl,
+.rounded-box,
+.rounded-btn,
+.rounded-badge {
+  border-radius: 0 !important;
+}
+
+@media (min-width: 1024px) {
+  .drawer-side {
+    z-index: 1 !important;
+  }
+  .drawer-content {
+    position: relative;
+    z-index: 2;
+  }
+}
+
+.prose-doc h1,
+.prose-doc h2,
+.prose-doc h3 {
+  font-weight: 700;
+  margin: 0.75em 0 0.35em;
+  color: var(--color-base-content);
+}
+.prose-doc p {
+  margin: 0.4em 0;
+  line-height: 1.5;
+  color: var(--color-base-content);
+}
+.prose-doc ul,
+.prose-doc ol {
+  margin: 0.4em 0 0.4em 1.25rem;
+  padding: 0;
+}
+.prose-doc strong {
+  font-weight: 700;
+}
+
+/* Clear active / validation affordances on fields */
+.input:focus,
+.textarea:focus,
+.select:focus,
+.file-input:focus {
+  outline: 2px solid color-mix(in oklch, var(--color-primary) 55%, transparent);
+  outline-offset: 0;
+  border-color: var(--color-primary);
+}
+
+.input:user-invalid:not(:focus),
+.textarea:user-invalid:not(:focus) {
+  border-color: var(--color-error);
 }
