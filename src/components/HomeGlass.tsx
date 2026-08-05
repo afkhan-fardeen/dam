@@ -1,5 +1,6 @@
 "use client";
 
+import { useDriveChrome } from "@/components/DriveChrome";
 import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
 import { useMemo, useState, type FormEvent } from "react";
 import { SearchHero } from "@/components/glass/SearchHero";
@@ -23,8 +24,22 @@ function formatDate(): string {
   });
 }
 
+function statusCaption(
+  status: "checking" | "connected" | "offline",
+): string {
+  switch (status) {
+    case "connected":
+      return "Ready to upload";
+    case "checking":
+      return "Checking PC…";
+    default:
+      return "PC offline — uploads paused";
+  }
+}
+
 export function HomeGlass({ profileName }: HomeGlassProps) {
   const navigate = useViewTransitionNavigate();
+  const { serverStatus } = useDriveChrome();
   const [query, setQuery] = useState("");
 
   const firstName = useMemo(() => {
@@ -42,20 +57,23 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-52px-5.5rem)] px-4 pb-24">
-      <p className="type-greeting mb-1 text-center">
-        {greetingHour()},{" "}
-        <span className="text-[var(--ink)] font-semibold">{firstName}</span>
-      </p>
-      <p className="type-caption mb-8 text-center">{formatDate()}</p>
-      <SearchHero
-        value={query}
-        onChange={setQuery}
-        onSubmit={submitSearch}
-        placeholder="Search files and entities…"
-        showCmdK
-        glow
-        className="w-full max-w-[560px]"
-      />
+      <div className="glass-appear flex flex-col items-center w-full max-w-[560px]">
+        <p className="type-greeting mb-1 text-center">
+          {greetingHour()},{" "}
+          <span className="text-[var(--ink)] font-semibold">{firstName}</span>
+        </p>
+        <p className="type-caption mb-8 text-center">{formatDate()}</p>
+        <SearchHero
+          value={query}
+          onChange={setQuery}
+          onSubmit={submitSearch}
+          placeholder="Search files and entities…"
+          showCmdK
+          glow
+          className="w-full"
+        />
+        <p className="type-caption mt-4 text-center">{statusCaption(serverStatus)}</p>
+      </div>
     </div>
   );
 }

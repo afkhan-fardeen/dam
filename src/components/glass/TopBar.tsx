@@ -80,7 +80,9 @@ export function TopBar({
             }
           >
             <span
-              className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+              className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${
+                serverStatus === "offline" ? "" : "pc-status-dot"
+              }`}
               style={{ backgroundColor: status.color }}
               aria-hidden
             />

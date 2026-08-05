@@ -587,6 +587,39 @@ body {
   transform: scale(0.97);
 }
 
+@keyframes dock-primary-breathe {
+  0%,
+  100% {
+    box-shadow: 0 4px 14px -4px rgba(0, 113, 227, 0.4);
+  }
+  50% {
+    box-shadow: 0 6px 20px -4px rgba(0, 113, 227, 0.62);
+  }
+}
+
+.dock-btn-breathe {
+  animation: dock-primary-breathe 2.8s ease-in-out infinite;
+}
+
+.dock-btn-breathe:hover,
+.dock-btn-breathe:active {
+  animation-play-state: paused;
+}
+
+@keyframes pc-status-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pc-status-dot {
+  animation: pc-status-breathe 2.4s ease-in-out infinite;
+}
+
 .dock-btn-active {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.7);
@@ -751,6 +784,15 @@ body {
   .pulse-confirm,
   .shake-error {
     animation: none;
+  }
+
+  .dock-btn-breathe,
+  .pc-status-dot {
+    animation: none;
+  }
+
+  .pc-status-dot {
+    opacity: 1;
   }
 
   .search-results-stagger > * {

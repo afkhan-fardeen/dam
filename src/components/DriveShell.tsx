@@ -26,7 +26,6 @@ import {
 } from "@/lib/types";
 import { roleForSpace } from "@/lib/auth-client";
 import { useDriveChrome } from "@/components/DriveChrome";
-import { useFileServerHealth } from "@/lib/useFileServerHealth";
 import { UploadProgressPanel } from "@/components/UploadProgressPanel";
 import { PasswordField } from "@/components/PasswordField";
 import { CommandBar } from "@/components/CommandBar";
@@ -55,8 +54,15 @@ export function DriveShell({
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { openUpload, closeUpload, uploadOpen, uploadSpaceId, requestNewFolder, serverOnline } = useDriveChrome();
-  const health = useFileServerHealth();
+  const {
+    openUpload,
+    closeUpload,
+    uploadOpen,
+    uploadSpaceId,
+    requestNewFolder,
+    serverOnline,
+    serverStatus,
+  } = useDriveChrome();
 
   const activeSlug = pathname.startsWith("/s/")
     ? pathname.split("/")[2]
@@ -74,7 +80,7 @@ export function DriveShell({
   const onSearch = pathname === "/search";
   const onAdmin = pathname.startsWith("/admin");
   const onEntity = pathname.startsWith("/e/");
-  const online = health === "connected" && serverOnline;
+  const online = serverOnline;
   const showHomeHero = onHome && view === "all";
 
   const defaultUploadSpaceId = useMemo(() => {
@@ -86,8 +92,8 @@ export function DriveShell({
     return profile.is_admin && spaces[0] ? spaces[0].id : null;
   }, [activeSpace, role, spaces, memberships, profile.is_admin]);
 
-  const canShellUpload = Boolean(defaultUploadSpaceId) && online && view !== "trash";
-
+  const canShellUpload =
+    Boolean(defaultUploadSpaceId) && online && view !== "trash";
 
   const showTrash =
     profile.is_admin || memberships.some((m) => m.role === "editor");
@@ -96,31 +102,25 @@ export function DriveShell({
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
+  const [dockToast, setDockToast] = useState<string | null>(null);
 
   useEffect(() => {
     setQuery(searchParams.get("q") || "");
   }, [searchParams]);
 
-  // Live search from slim top search (non-home pages)
   useEffect(() => {
-    if (showHomeHero) return;
-    const trimmed = query.trim();
-    const urlQ = (searchParams.get("q") || "").trim();
+    if (!dockToast) return;
+    const id = window.setTimeout(() => setDockToast(null), 2800);
+    return () => window.clearTimeout(id);
+  }, [dockToast]);
 
-    const handle = window.setTimeout(() => {
-      if (!trimmed) {
-        if (onSearch) navigateWithTransition(router, "/");
-        return;
-      }
-      if (trimmed === urlQ && onSearch) return;
-      navigateWithTransition(
-        router,
-        `/search?q=${encodeURIComponent(trimmed)}`,
-      );
-    }, 180);
-
-    return () => window.clearTimeout(handle);
-  }, [query, pathname, router, searchParams, showHomeHero, onSearch]);
+  function uploadBlockedReason(): string | undefined {
+    if (serverStatus === "checking") return "Checking PC…";
+    if (!online) return "PC offline";
+    if (!defaultUploadSpaceId) return "No place to upload — ask an admin";
+    if (view === "trash") return "Leave trash to upload";
+    return undefined;
+  }
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -136,6 +136,13 @@ export function DriveShell({
       router,
       `/search?q=${encodeURIComponent(trimmed)}`,
     );
+  }
+
+  function clearSearch() {
+    setQuery("");
+    if (onSearch) {
+      navigateWithTransition(router, "/");
+    }
   }
 
   async function signOut() {
@@ -174,6 +181,7 @@ export function DriveShell({
   }, [profile]);
 
   const shellUploadSpaceId = uploadSpaceId || defaultUploadSpaceId;
+  const uploadTitle = uploadBlockedReason();
 
   const dockItems: DockItem[] = useMemo(() => {
     if (onAdmin) {
@@ -192,23 +200,28 @@ export function DriveShell({
       }));
     }
 
-    const uploadTitle = !online
-      ? "PC offline"
-      : !defaultUploadSpaceId
-        ? "No place to upload — ask an admin"
-        : undefined;
+    const uploadItem = (opts: {
+      onClick: () => void;
+      extraDisabled?: boolean;
+    }): DockItem => ({
+      id: "upload",
+      label: "Upload",
+      icon: <IconUpload size={15} stroke={1.75} />,
+      primary: true,
+      breathe: true,
+      disabled: !canShellUpload || Boolean(opts.extraDisabled),
+      title: uploadTitle,
+      onClick: opts.onClick,
+      onDisabledClick: () => {
+        if (uploadTitle) setDockToast(uploadTitle);
+      },
+    });
 
     if (onSearch) {
       return [
-        {
-          id: "upload",
-          label: "Upload",
-          icon: <IconUpload size={15} stroke={1.75} />,
-          primary: true,
-          disabled: !canShellUpload,
-          title: uploadTitle,
+        uploadItem({
           onClick: () => openUpload(defaultUploadSpaceId),
-        },
+        }),
         {
           id: "new-search",
           label: "New Search",
@@ -222,15 +235,10 @@ export function DriveShell({
 
     if (activeSlug) {
       const items: DockItem[] = [
-        {
-          id: "upload",
-          label: "Upload",
-          icon: <IconUpload size={15} stroke={1.75} />,
-          primary: true,
-          disabled: !canShellUpload || !editable,
-          title: uploadTitle,
+        uploadItem({
           onClick: () => openUpload(activeSpace?.id ?? defaultUploadSpaceId),
-        },
+          extraDisabled: !editable,
+        }),
         {
           id: "folder",
           label: "New folder",
@@ -266,17 +274,10 @@ export function DriveShell({
       return items;
     }
 
-    // Home / list views — no Spaces
     return [
-      {
-        id: "upload",
-        label: "Upload",
-        icon: <IconUpload size={15} stroke={1.75} />,
-        primary: true,
-        disabled: !canShellUpload,
-        title: uploadTitle,
+      uploadItem({
         onClick: () => openUpload(defaultUploadSpaceId),
-      },
+      }),
       {
         id: "favorites",
         label: "Favorites",
@@ -311,7 +312,7 @@ export function DriveShell({
     canShellUpload,
     editable,
     defaultUploadSpaceId,
-    online,
+    uploadTitle,
     showTrash,
     view,
     router,
@@ -340,7 +341,7 @@ export function DriveShell({
 
       <TopBar
         brandLabel=""
-        serverStatus={health}
+        serverStatus={serverStatus}
         trailing={
           <GlassDropdown trigger={avatarTrigger}>
             {profile.is_admin ? (
@@ -377,6 +378,7 @@ export function DriveShell({
               value={query}
               onChange={setQuery}
               onSubmit={submitSearch}
+              onClear={clearSearch}
               placeholder="Search files and entities…"
               showCmdK={onSearch}
               glow={onSearch}
@@ -407,6 +409,16 @@ export function DriveShell({
 
       {!onEntity ? <Dock items={dockItems} /> : null}
 
+      {dockToast ? (
+        <div
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[55] glass-content glass-appear px-4 py-2.5 type-caption text-[var(--ink)] max-w-[min(90vw,20rem)] text-center shadow-lg"
+          style={{ borderRadius: 14 }}
+          role="status"
+        >
+          {dockToast}
+        </div>
+      ) : null}
+
       <UploadProgressPanel />
 
       <CommandBar
@@ -415,7 +427,6 @@ export function DriveShell({
         canUpload={canShellUpload}
         onUpload={() => openUpload(defaultUploadSpaceId)}
       />
-
 
       {uploadOpen && shellUploadSpaceId ? (
         <UploadForm

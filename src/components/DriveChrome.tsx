@@ -8,7 +8,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useFileServerHealth } from "@/lib/useFileServerHealth";
+import {
+  useFileServerHealth,
+  type ServerStatus,
+} from "@/lib/useFileServerHealth";
 
 export type TransferJob = {
   id: string;
@@ -33,6 +36,8 @@ type DriveChromeContextValue = {
   uploadSpaceId: string | null;
   openUpload: (spaceId?: string | null) => void;
   closeUpload: () => void;
+  /** Single PC health source for TopBar + Upload */
+  serverStatus: ServerStatus;
   serverOnline: boolean;
   jobs: TransferJob[];
   upsertJob: (job: TransferJob) => void;
@@ -47,7 +52,7 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadSpaceId, setUploadSpaceId] = useState<string | null>(null);
   const [jobs, setJobs] = useState<TransferJob[]>([]);
-  const health = useFileServerHealth();
+  const serverStatus = useFileServerHealth();
 
   const openUpload = useCallback((spaceId?: string | null) => {
     if (spaceId) setUploadSpaceId(spaceId);
@@ -92,7 +97,8 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       uploadSpaceId,
       openUpload,
       closeUpload,
-      serverOnline: health === "connected",
+      serverStatus,
+      serverOnline: serverStatus === "connected",
       jobs,
       upsertJob,
       removeJob,
@@ -106,7 +112,7 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       uploadSpaceId,
       openUpload,
       closeUpload,
-      health,
+      serverStatus,
       jobs,
       upsertJob,
       removeJob,

@@ -7,6 +7,8 @@ type SearchHeroProps = {
   value: string;
   onChange: (value: string) => void;
   onSubmit?: (e: FormEvent) => void;
+  /** When set, clear button commits via this (e.g. leave /search). */
+  onClear?: () => void;
   placeholder?: string;
   showCmdK?: boolean;
   glow?: boolean;
@@ -20,6 +22,7 @@ export function SearchHero({
   value,
   onChange,
   onSubmit,
+  onClear,
   placeholder = "Search…",
   showCmdK = true,
   glow = true,
@@ -58,7 +61,10 @@ export function SearchHero({
               type="button"
               aria-label="Clear search"
               className="text-[var(--ink-faint)] hover:text-[var(--ink)] transition-colors"
-              onClick={() => onChange("")}
+              onClick={() => {
+                if (onClear) onClear();
+                else onChange("");
+              }}
             >
               <IconX size={15} />
             </button>
