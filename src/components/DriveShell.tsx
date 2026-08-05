@@ -390,6 +390,7 @@ export function DriveShell({
 
       <TopBar
         more={showHomeHero || onHome ? moreMenu : undefined}
+        serverStatus={health}
         trailing={
           <GlassDropdown trigger={avatarTrigger}>
             {profile.is_admin ? (

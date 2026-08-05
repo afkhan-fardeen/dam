@@ -93,7 +93,7 @@ export default function LoginPage() {
         className="glass-strong glass-appear w-full max-w-[360px] p-7 flex flex-col gap-5"
         style={{ borderRadius: 20 }}
       >
-        <h1 className="type-page text-center">Company assets</h1>
+        <h1 className="type-page text-center">Assets</h1>
 
         <label className="flex flex-col gap-1.5">
           <span className="type-caption">Email</span>

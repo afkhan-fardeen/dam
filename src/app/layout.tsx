@@ -10,8 +10,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Company assets",
-  description: "Loveboo and Seissense brand assets",
+  title: "Assets",
+  description: "Shared files and spaces",
 };
 
 export default function RootLayout({

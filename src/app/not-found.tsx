@@ -9,11 +9,11 @@ export default function NotFound() {
         <div className="card-body gap-4">
           <h1 className="card-title type-page">Page not found</h1>
           <p className="text-sm text-base-content/70">
-            That link does not match anything in Company assets. The page may
-            have moved, or you may not have access to it.
+            That link does not match anything here. The page may have moved, or
+            you may not have access to it.
           </p>
           <p className="text-sm text-base-content/60">
-            Try going home and searching, or open a space from the sidebar.
+            Try going home and searching, or open a space from the dock.
           </p>
           <div className="card-actions justify-end">
             <Link href="/" className="btn btn-primary btn-sm">
