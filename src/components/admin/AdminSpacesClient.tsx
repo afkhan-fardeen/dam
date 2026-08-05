@@ -195,14 +195,14 @@ export function AdminSpacesClient() {
     isArchived?: boolean;
   }) {
     return (
-      <div className="flex items-center gap-3 px-2 py-3 rounded-lg hover:bg-base-200">
+      <div className="flex items-center gap-3 px-2 py-3 rounded-[12px] hover:bg-white/45">
         <span
           className="h-3 w-3 rounded-full shrink-0"
           style={{ backgroundColor: s.color }}
         />
         <div className="min-w-0 flex-1">
           <p className="type-label">{s.name}</p>
-          <p className="type-caption opacity-60">
+          <p className="type-caption text-[var(--ink-soft)]">
             {s.kind === "department" ? "Department" : "Brand"} · {s.slug}
             {s.requires_passcode ? " · Passcode" : ""}
             {" · "}
@@ -238,7 +238,7 @@ export function AdminSpacesClient() {
               </button>
               <button
                 type="button"
-                className="btn btn-ghost btn-xs text-error"
+                className="btn btn-ghost btn-xs text-[#ff3b30]"
                 onClick={() => {
                   setDeleteTarget(s);
                   setConfirmName("");
@@ -255,14 +255,14 @@ export function AdminSpacesClient() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
 
       <div className="flex items-center justify-between gap-3">
-        <p className="type-body opacity-60">
+        <p className="type-body text-[var(--ink-soft)]">
           {spaces.length} active
         </p>
-        <button type="button" onClick={openCreate} className="btn btn-primary btn-sm">
+        <button type="button" onClick={openCreate} className="btn-glass-primary px-4 py-2 text-[13px] font-medium">
           New space
         </button>
       </div>
@@ -272,7 +272,7 @@ export function AdminSpacesClient() {
           <SpaceRow key={s.id} s={s} />
         ))}
         {spaces.length === 0 ? (
-          <p className="type-body opacity-60 py-6">No spaces yet.</p>
+          <p className="type-body text-[var(--ink-soft)] py-6">No spaces yet.</p>
         ) : null}
       </div>
 
@@ -319,7 +319,7 @@ export function AdminSpacesClient() {
             className="flex flex-col gap-5"
           >
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Name
               </legend>
               <input
@@ -332,8 +332,8 @@ export function AdminSpacesClient() {
             </fieldset>
 
             <div className="flex flex-col gap-2">
-              <p className="type-caption opacity-60">Type</p>
-              <div className="flex rounded-lg bg-base-200 p-0.5">
+              <p className="type-caption text-[var(--ink-soft)]">Type</p>
+              <div className="flex rounded-[12px] bg-base-200 p-0.5">
                 {(
                   [
                     { key: "brand", label: "Brand" },
@@ -357,7 +357,7 @@ export function AdminSpacesClient() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <p className="type-caption opacity-60">Accent color</p>
+              <p className="type-caption text-[var(--ink-soft)]">Accent color</p>
               <div className="flex flex-wrap gap-2">
                 {SPACE_COLOR_PRESETS.map((c) => {
                   const selected = color.toLowerCase() === c.toLowerCase();
@@ -408,7 +408,7 @@ export function AdminSpacesClient() {
               />
             ) : null}
 
-            {error ? <p className="type-caption text-error">{error}</p> : null}
+            {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
           </form>
         </AdminModal>
       ) : null}
@@ -452,7 +452,7 @@ export function AdminSpacesClient() {
               className="input input-bordered w-full"
               autoFocus
             />
-            {error ? <p className="type-caption text-error">{error}</p> : null}
+            {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
           </form>
         </AdminModal>
       ) : null}

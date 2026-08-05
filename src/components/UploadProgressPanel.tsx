@@ -67,7 +67,7 @@ export function UploadProgressPanel() {
 
   return (
     <div className="toast toast-end toast-bottom z-[60] mb-16 sm:mb-0 w-full sm:w-80 max-w-full">
-      <div className="alert bg-base-100 shadow-lg flex-col items-stretch gap-3 py-3 border border-base-300">
+      <div className="glass-strong flex-col items-stretch gap-3 py-3 px-4 flex">
         <div className="flex items-center justify-between gap-2 w-full">
           <p className="text-sm font-semibold">Transfers</p>
           <button

@@ -37,13 +37,8 @@ export function PasswordField({
   const [show, setShow] = useState(false);
 
   return (
-    <fieldset className={`fieldset w-full ${className}`}>
-      {label ? (
-        <legend className="fieldset-legend text-xs opacity-60 py-0">
-          {label}
-        </legend>
-      ) : null}
-      {/* Avoid DaisyUI label.input wrapping — clicks on the eye were swallowed. */}
+    <label className={`flex flex-col gap-1.5 w-full ${className}`}>
+      {label ? <span className="type-caption">{label}</span> : null}
       <div className="relative w-full">
         <input
           id={id}
@@ -57,7 +52,7 @@ export function PasswordField({
           autoComplete={autoComplete}
           autoFocus={autoFocus}
           disabled={disabled}
-          className={`input input-bordered w-full pr-10 type-body ${inputClassName}`}
+          className={`glass-input type-body py-2 pr-10 w-full ${inputClassName}`}
         />
         <button
           type="button"
@@ -65,7 +60,6 @@ export function PasswordField({
           disabled={disabled}
           aria-label={show ? "Hide password" : "Show password"}
           onMouseDown={(e) => {
-            // Keep focus in the field; prevent label/button focus steal.
             e.preventDefault();
           }}
           onClick={(e) => {
@@ -73,11 +67,11 @@ export function PasswordField({
             e.stopPropagation();
             setShow((v) => !v);
           }}
-          className="btn btn-ghost btn-xs btn-circle absolute right-1.5 top-1/2 -translate-y-1/2 z-10"
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 text-[var(--ink-faint)] hover:text-[var(--ink)]"
         >
           {show ? <IconEyeOff size={16} /> : <IconEye size={16} />}
         </button>
       </div>
-    </fieldset>
+    </label>
   );
 }

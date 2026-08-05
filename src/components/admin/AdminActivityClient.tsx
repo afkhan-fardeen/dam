@@ -60,13 +60,13 @@ export function AdminActivityClient() {
   }, [load]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
       <div className="flex flex-wrap gap-2 overflow-x-auto">
         <select
           value={spaceId}
           onChange={(e) => setSpaceId(e.target.value)}
-          className="select select-bordered select-sm min-w-[140px]"
+          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[140px]"
         >
           <option value="">All spaces</option>
           {spaces.map((b) => (
@@ -78,7 +78,7 @@ export function AdminActivityClient() {
         <select
           value={userId}
           onChange={(e) => setUserId(e.target.value)}
-          className="select select-bordered select-sm min-w-[140px]"
+          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[140px]"
         >
           <option value="">All people</option>
           {users.map((u) => (
@@ -90,7 +90,7 @@ export function AdminActivityClient() {
         <select
           value={action}
           onChange={(e) => setAction(e.target.value)}
-          className="select select-bordered select-sm min-w-[140px]"
+          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[140px]"
         >
           <option value="">All actions</option>
           {ACTIONS.map((a) => (
@@ -99,36 +99,36 @@ export function AdminActivityClient() {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-1.5 type-caption opacity-60">
+        <label className="flex items-center gap-1.5 type-caption text-[var(--ink-soft)]">
           From
           <input
             type="date"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-            className="input input-bordered input-sm min-w-[9rem]"
+            className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[9rem]"
           />
         </label>
-        <label className="flex items-center gap-1.5 type-caption opacity-60">
+        <label className="flex items-center gap-1.5 type-caption text-[var(--ink-soft)]">
           To
           <input
             type="date"
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="input input-bordered input-sm min-w-[9rem]"
+            className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[9rem]"
           />
         </label>
       </div>
 
       <div className="flex flex-col gap-0.5">
         {entries.length === 0 ? (
-          <p className="px-2 py-6 type-body opacity-60">
+          <p className="px-2 py-6 type-body text-[var(--ink-soft)]">
             No activity yet.
           </p>
         ) : (
           entries.map((e) => (
             <div
               key={e.id}
-              className="px-2 py-2.5 type-body rounded-lg hover:bg-base-200"
+              className="px-2 py-2.5 type-body rounded-[12px] hover:bg-white/45"
             >
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                 <span className="text-base-content">

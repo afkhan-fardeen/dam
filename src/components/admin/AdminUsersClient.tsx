@@ -185,7 +185,7 @@ export function AdminUsersClient() {
     spaces.find((b) => b.id === id)?.color || "#6b7280";
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -193,9 +193,9 @@ export function AdminUsersClient() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search people…"
-          className="input input-bordered input-sm max-w-xs"
+          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 max-w-xs"
         />
-        <button type="button" onClick={openModal} className="btn btn-primary btn-sm">
+        <button type="button" onClick={openModal} className="btn-glass-primary px-4 py-2 text-[13px] font-medium">
           New person
         </button>
       </div>
@@ -207,7 +207,7 @@ export function AdminUsersClient() {
           return (
             <div
               key={u.id}
-              className={`px-2 py-3 rounded-lg hover:bg-base-200 flex flex-col gap-2 ${
+              className={`px-2 py-3 rounded-[12px] hover:bg-white/45 flex flex-col gap-2 ${
                 inactive ? "opacity-45" : ""
               }`}
             >
@@ -215,7 +215,7 @@ export function AdminUsersClient() {
                 <p className="type-label">
                   {u.full_name || "Unnamed"}
                 </p>
-                <p className="type-caption opacity-60">{u.email}</p>
+                <p className="type-caption text-[var(--ink-soft)]">{u.email}</p>
                 {u.is_admin ? (
                   <span className="badge badge-neutral badge-sm">Admin</span>
                 ) : null}
@@ -347,7 +347,7 @@ export function AdminUsersClient() {
               className="flex flex-col gap-5"
             >
               <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                   Full name
                 </legend>
                 <input
@@ -358,7 +358,7 @@ export function AdminUsersClient() {
                 />
               </fieldset>
               <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                   Email
                 </legend>
                 <input
@@ -371,7 +371,7 @@ export function AdminUsersClient() {
               </fieldset>
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
-                  <span className="type-caption opacity-60">Password</span>
+                  <span className="type-caption text-[var(--ink-soft)]">Password</span>
                   <button
                     type="button"
                     className="btn btn-ghost btn-xs"
@@ -390,7 +390,7 @@ export function AdminUsersClient() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <p className="type-caption opacity-60">Space access</p>
+                <p className="type-caption text-[var(--ink-soft)]">Space access</p>
                 {rows.map((row) => (
                   <div
                     key={row.key}
@@ -411,7 +411,7 @@ export function AdminUsersClient() {
                           ),
                         )
                       }
-                      className="select select-bordered select-sm w-full"
+                      className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 w-full"
                     >
                       {spaces.map((s) => (
                         <option key={s.id} value={s.id}>
@@ -430,7 +430,7 @@ export function AdminUsersClient() {
                           ),
                         )
                       }
-                      className="select select-bordered select-sm w-full"
+                      className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 w-full"
                     >
                       <option value="viewer">Viewer</option>
                       <option value="downloader">Downloader</option>
@@ -458,7 +458,7 @@ export function AdminUsersClient() {
                   </button>
                 ) : null}
               </div>
-              {error ? <p className="type-caption text-error">{error}</p> : null}
+              {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
             </form>
           )}
         </AdminModal>
@@ -511,12 +511,12 @@ export function AdminUsersClient() {
               onSubmit={(e) => void submitReset(e)}
               className="flex flex-col gap-4"
             >
-              <p className="type-body opacity-60">
+              <p className="type-body text-[var(--ink-soft)]">
                 Set a new password for {resetUser.full_name || resetUser.email}.
               </p>
               <div className="flex flex-col gap-1">
                 <div className="flex justify-between">
-                  <span className="type-caption opacity-60">Password</span>
+                  <span className="type-caption text-[var(--ink-soft)]">Password</span>
                   <button
                     type="button"
                     className="btn btn-ghost btn-xs"
@@ -533,7 +533,7 @@ export function AdminUsersClient() {
                   autoComplete="new-password"
                 />
               </div>
-              {error ? <p className="type-caption text-error">{error}</p> : null}
+              {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
             </form>
           )}
         </AdminModal>

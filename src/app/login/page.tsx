@@ -87,59 +87,54 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 bg-base-200">
+    <div className="min-h-screen flex items-center justify-center px-6">
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="card bg-base-100 w-full max-w-sm shadow-md border border-base-300"
+        className="glass-strong glass-appear w-full max-w-[360px] p-7 flex flex-col gap-5"
+        style={{ borderRadius: 20 }}
       >
-        <div className="card-body gap-6">
-          <h1 className="card-title type-page">Company assets</h1>
+        <h1 className="type-page text-center">Company assets</h1>
 
-          <fieldset className="fieldset w-full">
-            <legend className="fieldset-legend text-xs opacity-60 py-0">
-              Email
-            </legend>
-            <input
-              type="email"
-              name="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="input input-bordered w-full"
-              autoComplete="email"
-              inputMode="email"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
-          </fieldset>
-
-          <PasswordField
-            label="Password"
-            name="password"
-            value={password}
-            onChange={setPassword}
+        <label className="flex flex-col gap-1.5">
+          <span className="type-caption">Email</span>
+          <input
+            type="email"
+            name="email"
             required
-            autoComplete="current-password"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="glass-input type-body py-2"
+            autoComplete="email"
+            inputMode="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="you@company.com"
           />
+        </label>
 
-          {error ? <p className="text-sm text-error">{error}</p> : null}
+        <PasswordField
+          label="Password"
+          name="password"
+          value={password}
+          onChange={setPassword}
+          required
+          autoComplete="current-password"
+        />
 
-          <button
-            type="submit"
-            disabled={busy}
-            className="btn btn-primary w-full"
-          >
-            {busy ? (
-              <span className="loading loading-spinner loading-sm" />
-            ) : null}
-            {busy ? "Signing in…" : "Sign in"}
-          </button>
+        {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
 
-          <p className="text-sm text-base-content/60">
-            Contact your admin if you need access or a password reset.
-          </p>
-        </div>
+        <button
+          type="submit"
+          disabled={busy}
+          className="btn-glass-primary w-full py-2.5 text-[14px] font-medium disabled:opacity-50"
+        >
+          {busy ? "Signing in…" : "Sign in"}
+        </button>
+
+        <p className="type-caption text-center">
+          No account? Contact your admin.
+        </p>
       </form>
     </div>
   );

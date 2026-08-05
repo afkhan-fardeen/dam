@@ -658,8 +658,11 @@ export function AssetDetail({
         onClose();
       }}
     >
-      <div className="modal-box w-11/12 max-w-6xl h-[min(90vh,880px)] p-0 flex flex-col overflow-hidden rounded-none">
-        <div className="shrink-0 px-4 py-2.5 flex items-center gap-3 border-b border-base-300">
+      <div
+        className="modal-box w-11/12 max-w-6xl h-[min(90vh,880px)] p-0 flex flex-col overflow-hidden glass-strong glass-appear !bg-[var(--glass-strong)] border-0 shadow-none"
+        style={{ borderRadius: 22 }}
+      >
+        <div className="shrink-0 px-4 py-2.5 flex items-center gap-3">
           <div className="flex-1 min-w-0">
             {showRename ? (
               <input
@@ -682,26 +685,26 @@ export function AssetDetail({
             )}
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="dock-pill shrink-0 !gap-1">
             {!trashMode && (
               <button
                 type="button"
                 onClick={() => void toggleFavorite()}
                 disabled={busy}
                 aria-label={favorited ? "Unstar" : "Star"}
-                className="btn btn-ghost btn-sm btn-circle"
+                className="dock-btn !px-2.5"
               >
                 {favorited ? (
-                  <IconStarFilled size={18} className="text-warning" />
+                  <IconStarFilled size={16} className="text-[#ff9f0a]" />
                 ) : (
-                  <IconStar size={18} />
+                  <IconStar size={16} />
                 )}
               </button>
             )}
             {canDownload && assetUrl && !trashMode && (
               <button
                 type="button"
-                className="btn btn-primary btn-sm gap-1.5"
+                className="dock-btn dock-btn-primary !py-1.5"
                 onClick={() => {
                   void queueAssetDownload(
                     asset.file_id,
@@ -719,15 +722,15 @@ export function AssetDetail({
               onClick={() => setSidePanelOpen((v) => !v)}
               aria-label={sidePanelOpen ? "Hide info" : "Show info"}
               aria-pressed={sidePanelOpen}
-              className="btn btn-ghost btn-sm btn-circle"
+              className="dock-btn !px-2.5"
             >
-              <IconInfoCircle size={18} />
+              <IconInfoCircle size={16} />
             </button>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="btn btn-ghost btn-sm btn-circle"
+              className="dock-btn !px-2.5"
             >
               <IconX size={16} />
             </button>
@@ -735,7 +738,7 @@ export function AssetDetail({
         </div>
 
         <div className="relative flex flex-1 overflow-hidden min-h-0">
-          <div className="flex-1 flex items-center justify-center overflow-hidden bg-neutral text-neutral-content min-w-0 relative p-3">
+          <div className="flex-1 flex items-center justify-center overflow-hidden bg-black/5 min-w-0 relative p-3">
             <div className="h-full w-full flex items-center justify-center min-h-0 overflow-hidden">
               {renderPreview()}
             </div>
@@ -749,13 +752,13 @@ export function AssetDetail({
           </div>
 
           {sidePanelOpen ? (
-            <div className="absolute inset-0 z-10 sm:static sm:inset-auto sm:w-80 sm:shrink-0 bg-base-100 border-l border-base-300 flex flex-col overflow-hidden">
-              <div className="sm:hidden flex items-center justify-between px-4 pt-3 pb-1 border-b border-base-300">
+            <div className="absolute inset-0 z-10 sm:static sm:inset-auto sm:w-80 sm:shrink-0 glass !rounded-none sm:!rounded-none flex flex-col overflow-hidden border-0">
+              <div className="sm:hidden flex items-center justify-between px-4 pt-3 pb-1">
                 <p className="type-label">Details</p>
                 <button
                   type="button"
                   aria-label="Close details"
-                  className="btn btn-ghost btn-sm btn-circle"
+                  className="dock-btn !px-2"
                   onClick={() => setSidePanelOpen(false)}
                 >
                   <IconX size={16} />
@@ -1079,7 +1082,7 @@ export function AssetDetail({
           ) : null}
         </div>
       </div>
-      <form method="dialog" className="modal-backdrop">
+      <form method="dialog" className="modal-backdrop bg-transparent">
         <button type="button" onClick={onClose}>
           close
         </button>

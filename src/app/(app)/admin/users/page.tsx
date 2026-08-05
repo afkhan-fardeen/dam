@@ -7,11 +7,11 @@ export default async function AdminUsersPage() {
   if (!ok) redirect("/");
 
   return (
-    <div className="p-5 sm:p-8 max-w-3xl">
+    <div className="max-w-4xl mx-auto w-full">
       <h1 className="type-page">
         Users
       </h1>
-      <p className="text-sm text-base-content/60 mt-1 mb-2">
+      <p className="type-caption mt-1 mb-2">
         Accounts and space roles. Deactivated people stay in the list, dimmed.
       </p>
       <AdminUsersClient />

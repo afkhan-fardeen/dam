@@ -9,7 +9,7 @@ export default async function AdminAttributesPage() {
   return (
     <div className="p-5 sm:p-8 max-w-5xl">
       <h1 className="type-page">Attributes</h1>
-      <p className="text-sm text-base-content/60 mt-1 mb-2">
+      <p className="type-caption mt-1 mb-2">
         Typed fields like invoice numbers and AWBs for documents.
       </p>
       <AdminAttributesClient />

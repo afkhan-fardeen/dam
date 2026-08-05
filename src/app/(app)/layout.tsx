@@ -17,7 +17,7 @@ export default async function AppLayout({
 
   return (
     <DriveChromeProvider>
-      <Suspense fallback={<div className="min-h-screen bg-base-100" />}>
+      <Suspense fallback={<div className="min-h-screen" />}>
         <DriveShell
           spaces={spaces}
           memberships={memberships}

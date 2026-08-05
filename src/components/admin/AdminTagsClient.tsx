@@ -106,28 +106,28 @@ export function AdminTagsClient() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
       {error ? (
-        <p className="type-body text-error px-2">{error}</p>
+        <p className="type-body text-[#ff3b30] px-2">{error}</p>
       ) : null}
 
       <div className="flex flex-col gap-0.5">
         {tags.length === 0 ? (
-          <p className="px-2 py-6 type-body opacity-60">
+          <p className="px-2 py-6 type-body text-[var(--ink-soft)]">
             No tags yet. Tags appear when people tag files on upload.
           </p>
         ) : (
           tags.map((t) => (
             <div
               key={t.id}
-              className="px-2 py-3 rounded-lg hover:bg-base-200 flex flex-wrap items-center gap-2"
+              className="px-2 py-3 rounded-[12px] hover:bg-white/45 flex flex-wrap items-center gap-2"
             >
               <div className="min-w-0">
                 <p className="type-label truncate">
                   {t.name}
                 </p>
-                <p className="type-caption opacity-60">
+                <p className="type-caption text-[var(--ink-soft)]">
                   {t.count} {t.count === 1 ? "file" : "files"}
                 </p>
               </div>
@@ -195,7 +195,7 @@ export function AdminTagsClient() {
         >
           <form id="rename-tag-form" onSubmit={saveRename} className="flex flex-col gap-3">
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Name
               </legend>
               <input
@@ -235,11 +235,11 @@ export function AdminTagsClient() {
           }
         >
           <form id="merge-tag-form" onSubmit={saveMerge} className="flex flex-col gap-3">
-            <p className="type-body opacity-60">
+            <p className="type-body text-[var(--ink-soft)]">
               Move all file links to another tag, then delete “{mergeTag.name}”.
             </p>
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Merge into
               </legend>
               <select

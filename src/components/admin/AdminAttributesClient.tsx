@@ -90,24 +90,24 @@ export function AdminAttributesClient() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
 
       <div className="flex justify-end px-2">
         <button
           type="button"
-          className="btn btn-primary btn-sm"
+          className="btn-glass-primary px-4 py-2 text-[13px] font-medium"
           onClick={() => setShowCreate(true)}
         >
           New attribute
         </button>
       </div>
 
-      {error ? <p className="type-body text-error px-2">{error}</p> : null}
+      {error ? <p className="type-body text-[#ff3b30] px-2">{error}</p> : null}
 
       <div className="flex flex-col gap-0.5">
         {defs.length === 0 ? (
-          <p className="px-2 py-6 type-body opacity-60 max-w-xl">
+          <p className="px-2 py-6 type-body text-[var(--ink-soft)] max-w-xl">
             Attribute definitions describe typed fields on documents — invoice
             numbers, AWB codes, scheduled dates. Create one to make it available
             in every file&apos;s Attributes panel.
@@ -116,11 +116,11 @@ export function AdminAttributesClient() {
           defs.map((d) => (
             <div
               key={d.id}
-              className="px-2 py-3 hover:bg-base-200 flex flex-wrap items-center gap-2"
+              className="px-2 py-3 hover:bg-white/45 flex flex-wrap items-center gap-2"
             >
               <div className="min-w-0 flex-1">
                 <p className="type-label truncate">{d.label}</p>
-                <p className="type-caption opacity-60">
+                <p className="type-caption text-[var(--ink-soft)]">
                   {d.name} · {d.data_type}
                   {d.applicable_space_kind
                     ? ` · ${d.applicable_space_kind}`
@@ -173,7 +173,7 @@ export function AdminAttributesClient() {
             className="flex flex-col gap-3"
           >
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Label
               </legend>
               <input
@@ -184,7 +184,7 @@ export function AdminAttributesClient() {
               />
             </fieldset>
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Key (optional)
               </legend>
               <input
@@ -195,7 +195,7 @@ export function AdminAttributesClient() {
               />
             </fieldset>
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Type
               </legend>
               <select
@@ -213,7 +213,7 @@ export function AdminAttributesClient() {
             </fieldset>
             {dataType === "dropdown" ? (
               <fieldset className="fieldset w-full">
-                <legend className="fieldset-legend text-xs opacity-60 py-0">
+                <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                   Options (comma-separated)
                 </legend>
                 <input
@@ -224,7 +224,7 @@ export function AdminAttributesClient() {
               </fieldset>
             ) : null}
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Space kind
               </legend>
               <select

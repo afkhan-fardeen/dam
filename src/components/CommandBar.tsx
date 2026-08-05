@@ -213,15 +213,19 @@ export function CommandBar({
         setOpen(false);
       }}
     >
-      <div className="modal-box max-w-lg p-0 rounded-none">
-        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-base-300">
-          <IconSearch size={16} className="opacity-50 shrink-0" />
+      <div className="glass-scrim absolute inset-0 pointer-events-none" />
+      <div
+        className="modal-box max-w-lg p-0 glass-strong glass-appear !bg-[var(--glass-strong)] border-0 shadow-none"
+        style={{ borderRadius: 22 }}
+      >
+        <div className="flex items-center gap-2 px-4 py-3">
+          <IconSearch size={16} className="text-[var(--ink-faint)] shrink-0" />
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search documents, entities, spaces…"
-            className="input input-ghost input-sm flex-1 focus:outline-none type-body px-0"
+            className="glass-input flex-1 type-body"
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -237,12 +241,13 @@ export function CommandBar({
               }
             }}
           />
-          <span className="type-caption opacity-40 shrink-0">esc</span>
+          <span className="type-caption shrink-0">esc</span>
         </div>
+        <div className="glass-line mx-3" />
 
         <div className="max-h-80 overflow-y-auto py-2">
           {flatItems.length === 0 ? (
-            <p className="px-4 py-6 type-body opacity-60">
+            <p className="px-4 py-6 type-body text-[var(--ink-soft)]">
               {query.trim()
                 ? "Nothing matched. Try another name, invoice number, or space."
                 : "Type to search, or pick an action below."}
@@ -250,9 +255,7 @@ export function CommandBar({
           ) : (
             sections.map((section) => (
               <div key={section.label} className="mb-2">
-                <p className="type-micro opacity-50 px-3 py-1">
-                  {section.label}
-                </p>
+                <p className="card-label px-3 py-1">{section.label}</p>
                 <ul>
                   {section.items.map((item) => {
                     flatIndex += 1;
@@ -261,10 +264,8 @@ export function CommandBar({
                       <li key={item.id}>
                         <button
                           type="button"
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-left type-body ${
-                            idx === active
-                              ? "bg-base-200"
-                              : "hover:bg-base-200"
+                          className={`card-row ${
+                            idx === active ? "!bg-white/55" : ""
                           }`}
                           onMouseEnter={() => setActive(idx)}
                           onClick={() => runItem(item)}
@@ -272,13 +273,19 @@ export function CommandBar({
                           {item.kind === "action" ? (
                             <>
                               {item.id === "upload" ? (
-                                <IconUpload size={14} className="opacity-50" />
+                                <IconUpload
+                                  size={14}
+                                  className="text-[var(--ink-faint)]"
+                                />
                               ) : item.id === "admin" ? (
-                                <IconUsers size={14} className="opacity-50" />
+                                <IconUsers
+                                  size={14}
+                                  className="text-[var(--ink-faint)]"
+                                />
                               ) : (
                                 <IconSettings
                                   size={14}
-                                  className="opacity-50"
+                                  className="text-[var(--ink-faint)]"
                                 />
                               )}
                               <span className="type-label">{item.label}</span>
@@ -287,7 +294,7 @@ export function CommandBar({
                           {item.kind === "entity" ? (
                             <>
                               <span
-                                className="h-1.5 w-1.5 shrink-0"
+                                className="h-1.5 w-1.5 rounded-full shrink-0"
                                 style={{
                                   backgroundColor: entityTypeColor(
                                     item.entity.entity_type?.name,
@@ -297,16 +304,19 @@ export function CommandBar({
                               <span className="truncate flex-1">
                                 {item.entity.name}
                               </span>
-                              <span className="type-caption opacity-50">
+                              <span className="type-caption">
                                 {item.entity.entity_type?.label || "Entity"}
                               </span>
                             </>
                           ) : null}
                           {item.kind === "space" ? (
                             <>
-                              <IconFolder size={14} className="opacity-50" />
+                              <IconFolder
+                                size={14}
+                                className="text-[var(--ink-faint)]"
+                              />
                               <span
-                                className="h-1.5 w-1.5 shrink-0"
+                                className="h-1.5 w-1.5 rounded-full shrink-0"
                                 style={{ backgroundColor: item.space.color }}
                               />
                               <span>{item.space.name}</span>
@@ -314,7 +324,10 @@ export function CommandBar({
                           ) : null}
                           {item.kind === "document" ? (
                             <>
-                              <IconFile size={14} className="opacity-50" />
+                              <IconFile
+                                size={14}
+                                className="text-[var(--ink-faint)]"
+                              />
                               <span className="truncate">
                                 {item.asset.original_name || "Untitled"}
                               </span>
@@ -330,13 +343,13 @@ export function CommandBar({
           )}
         </div>
 
-        <div className="px-3 py-2 border-t border-base-300 type-caption opacity-40 flex gap-3">
+        <div className="px-4 py-2 type-caption flex gap-3">
           <span>↑↓</span>
           <span>↵ open</span>
           <span>⌘K</span>
         </div>
       </div>
-      <form method="dialog" className="modal-backdrop">
+      <form method="dialog" className="modal-backdrop bg-transparent">
         <button type="button" onClick={() => setOpen(false)}>
           close
         </button>

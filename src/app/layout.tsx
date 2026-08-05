@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
-const jetbrainsMono = JetBrains_Mono({
+const inter = Inter({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "700"],
-  variable: "--font-mono",
+  weight: ["400", "500", "600"],
+  variable: "--font-inter",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -19,12 +20,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${jetbrainsMono.variable} h-full`}
-      data-theme="assethub"
-    >
-      <body className="min-h-full font-mono antialiased bg-base-100 text-base-content font-light">
+    <html lang="en" className={`${inter.variable} h-full`}>
+      <body className="min-h-full antialiased text-[var(--ink)]">
+        <div className="glass-wash" aria-hidden />
         {children}
       </body>
     </html>

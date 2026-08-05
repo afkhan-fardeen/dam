@@ -12,7 +12,6 @@ type AdminModalProps = {
   size?: "md" | "lg";
 };
 
-/** DaisyUI admin modal — scrollable body, sticky footer, escape to close. */
 export function AdminModal({
   title,
   onClose,
@@ -43,10 +42,12 @@ export function AdminModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
+      <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <div
-        className={`modal-box flex flex-col max-h-[min(90vh,640px)] p-0 ${
+        className={`modal-box flex flex-col max-h-[min(90vh,640px)] p-0 glass-strong glass-appear !bg-[var(--glass-strong)] border-0 shadow-none ${
           size === "lg" ? "max-w-lg" : "max-w-md"
         }`}
+        style={{ borderRadius: 22 }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 flex items-center gap-3 px-5 pt-5 pb-2">
@@ -54,7 +55,7 @@ export function AdminModal({
           <button
             type="button"
             aria-label="Close"
-            className="btn btn-ghost btn-sm btn-circle"
+            className="dock-btn !px-2"
             onClick={onClose}
           >
             <IconX size={16} />
@@ -62,10 +63,10 @@ export function AdminModal({
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-2">{children}</div>
         {footer ? (
-          <div className="modal-action shrink-0 px-5 py-4 mt-0">{footer}</div>
+          <div className="shrink-0 px-5 py-4 flex justify-end gap-2">{footer}</div>
         ) : null}
       </div>
-      <form method="dialog" className="modal-backdrop">
+      <form method="dialog" className="modal-backdrop bg-transparent">
         <button type="submit" onClick={onClose}>
           close
         </button>

@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { IconFilter } from "@tabler/icons-react";
 import { AssetCard } from "@/components/AssetCard";
-import { EntityChip, entityTypeColor } from "@/components/EntityChip";
+import { entityTypeColor } from "@/components/EntityChip";
+import { GlassDropdown } from "@/components/glass/GlassDropdown";
+import { SpaceBadge } from "@/components/glass/TagChip";
 import type { Asset, Entity, Space } from "@/lib/types";
 
 type GlobalSearchClientProps = {
@@ -14,6 +17,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const q = searchParams.get("q") || "";
+  const spaceFilter = searchParams.get("space") || "";
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -25,6 +29,16 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     [spaces],
   );
 
+  const matchedSpaces = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return [] as Space[];
+    return spaces.filter(
+      (s) =>
+        s.name.toLowerCase().includes(needle) ||
+        s.slug.toLowerCase().includes(needle),
+    );
+  }, [q, spaces]);
+
   const load = useCallback(async () => {
     if (!q.trim()) {
       setAssets([]);
@@ -34,7 +48,9 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q.trim())}`);
+      const params = new URLSearchParams({ q: q.trim() });
+      if (spaceFilter) params.set("space_id", spaceFilter);
+      const res = await fetch(`/api/search?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Search failed");
       setAssets((json.documents ?? json.assets ?? []) as Asset[]);
@@ -46,34 +62,17 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     } finally {
       setLoading(false);
     }
-  }, [q]);
+  }, [q, spaceFilter]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => void load(), 80);
     return () => window.clearTimeout(handle);
   }, [load]);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, Asset[]>();
-    for (const asset of assets) {
-      const key = asset.space_id || "unknown";
-      const list = map.get(key) ?? [];
-      list.push(asset);
-      map.set(key, list);
-    }
-    return [...map.entries()];
-  }, [assets]);
-
-  const entitiesByType = useMemo(() => {
-    const map = new Map<string, Entity[]>();
-    for (const e of entities) {
-      const key = e.entity_type?.label || "Entities";
-      const list = map.get(key) ?? [];
-      list.push(e);
-      map.set(key, list);
-    }
-    return [...map.entries()];
-  }, [entities]);
+  const filteredAssets = useMemo(() => {
+    if (!spaceFilter) return assets;
+    return assets.filter((a) => a.space_id === spaceFilter);
+  }, [assets, spaceFilter]);
 
   function openAsset(asset: Asset) {
     const space = asset.space_id ? spaceById.get(asset.space_id) : null;
@@ -84,104 +83,157 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     router.push(`/s/${space.slug}?${params.toString()}`);
   }
 
+  function setSpaceFilter(id: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (id) params.set("space", id);
+    else params.delete("space");
+    router.push(`/search?${params.toString()}`);
+  }
+
   return (
-    <div className="flex flex-col gap-4 p-5 w-full">
-      <div>
-        <h1 className="type-page text-base-content">Search results</h1>
-        <p className="type-caption opacity-60 mt-1">
-          {q.trim()
-            ? loading
-              ? `Searching for “${q.trim()}”…`
-              : `${entities.length} entit${entities.length === 1 ? "y" : "ies"} · ${assets.length} document${assets.length === 1 ? "" : "s"}`
-            : "Type in the top bar to search everything."}
-        </p>
+    <div className="flex flex-col gap-5 w-full max-w-4xl mx-auto pb-8">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="type-page">Search results</h1>
+          <p className="type-caption mt-1">
+            {q.trim()
+              ? loading
+                ? `Searching for “${q.trim()}”…`
+                : `${entities.length} entit${entities.length === 1 ? "y" : "ies"} · ${filteredAssets.length} document${filteredAssets.length === 1 ? "" : "s"} · ${matchedSpaces.length} space${matchedSpaces.length === 1 ? "" : "s"}`
+              : "Type above to search everything."}
+          </p>
+        </div>
+        <GlassDropdown
+          trigger={
+            <span className="dock-btn">
+              <IconFilter size={15} stroke={1.75} />
+              Filters
+              {spaceFilter ? (
+                <span className="text-[var(--accent)]">· 1</span>
+              ) : null}
+            </span>
+          }
+          widthClass="w-[220px]"
+        >
+          <p className="card-label px-2.5 pt-1 pb-1">Space</p>
+          <button
+            type="button"
+            className="card-row"
+            onClick={() => setSpaceFilter("")}
+          >
+            All spaces
+          </button>
+          {spaces.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="card-row"
+              onClick={() => setSpaceFilter(s.id)}
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: s.color }}
+              />
+              <span className="truncate flex-1">{s.name}</span>
+              {spaceFilter === s.id ? (
+                <span className="text-[var(--accent)] text-[11px]">✓</span>
+              ) : null}
+            </button>
+          ))}
+        </GlassDropdown>
       </div>
 
-      {error ? <p className="type-caption text-error">{error}</p> : null}
+      {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
 
       {!loading &&
       q.trim() &&
-      assets.length === 0 &&
-      entities.length === 0 ? (
-        <p className="type-body opacity-60 py-8 max-w-xl">
-          Nothing matched “{q.trim()}”. Try an entity name, invoice number, or
-          file title — or clear the search and browse a space from the sidebar.
-        </p>
+      filteredAssets.length === 0 &&
+      entities.length === 0 &&
+      matchedSpaces.length === 0 ? (
+        <div className="glass p-8 text-center">
+          <p className="type-body text-[var(--ink-soft)]">
+            Nothing matched “{q.trim()}”. Try an entity name, invoice number, or
+            file title.
+          </p>
+        </div>
       ) : null}
 
-      {entitiesByType.map(([typeLabel, list]) => (
-        <section key={typeLabel} className="flex flex-col gap-2">
-          <h2 className="type-micro opacity-50">
-            {typeLabel}
-            <span className="font-normal ml-1">· {list.length}</span>
-          </h2>
-          <div className="flex flex-col gap-1">
-            {list.map((e) => (
+      {entities.length > 0 ? (
+        <section className="glass p-4 flex flex-col gap-2">
+          <h2 className="card-label px-1">Entities</h2>
+          <div className="flex flex-col gap-0.5">
+            {entities.map((e) => (
               <button
                 key={e.id}
                 type="button"
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-base-200"
+                className="card-row"
                 onClick={() => router.push(`/e/${e.id}`)}
               >
                 <span
-                  className="h-2.5 w-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: entityTypeColor(e.entity_type?.name) }}
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{
+                    backgroundColor: entityTypeColor(e.entity_type?.name),
+                  }}
                 />
-                <span className="text-sm font-medium flex-1 truncate">
-                  {e.name}
+                <span className="flex-1 truncate text-left">{e.name}</span>
+                <span className="type-caption">
+                  {e.entity_type?.label || "Entity"}
                 </span>
-                <EntityChip entity={e} />
               </button>
             ))}
           </div>
         </section>
-      ))}
-
-      {grouped.length > 0 ? (
-        <h2 className="type-micro opacity-50">Documents</h2>
       ) : null}
 
-      {grouped.map(([spaceId, list]) => {
-        const space = spaceById.get(spaceId);
-        return (
-          <section key={spaceId}>
-            <h2 className="type-micro opacity-50 mb-2 flex items-center gap-2">
-              {space ? (
-                <span
-                  className="h-2 w-2"
-                  style={{ backgroundColor: space.color }}
+      {filteredAssets.length > 0 ? (
+        <section className="glass p-4 flex flex-col gap-3">
+          <h2 className="card-label px-1">Documents</h2>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
+            {filteredAssets.map((asset) => {
+              const space = asset.space_id
+                ? spaceById.get(asset.space_id)
+                : null;
+              return (
+                <AssetCard
+                  key={asset.id}
+                  asset={asset}
+                  locked={Boolean(asset.locked)}
+                  spaceName={space?.name ?? null}
+                  spaceColor={space?.color ?? null}
+                  showSpace
+                  thumbnailUrl={
+                    !asset.locked && asset.has_thumbnail
+                      ? `/api/media/thumbnail/${encodeURIComponent(asset.file_id)}`
+                      : null
+                  }
+                  onClick={() => openAsset(asset)}
                 />
-              ) : null}
-              {space?.name || "Unknown space"}
-              <span>· {list.length}</span>
-            </h2>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
-              {list.map((asset) => (
-                <div key={asset.id} className="flex flex-col">
-                  <AssetCard
-                    asset={asset}
-                    locked={Boolean(asset.locked)}
-                    spaceName={space?.name ?? null}
-                    spaceColor={space?.color ?? null}
-                    showSpace
-                    thumbnailUrl={
-                      !asset.locked && asset.has_thumbnail
-                        ? `/api/media/thumbnail/${encodeURIComponent(asset.file_id)}`
-                        : null
-                    }
-                    onClick={() => openAsset(asset)}
-                  />
-                  {asset.locked && space ? (
-                    <p className="px-2 type-caption opacity-60">
-                      In {space.name} · Locked
-                    </p>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </section>
-        );
-      })}
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      {matchedSpaces.length > 0 ? (
+        <section className="glass p-4 flex flex-col gap-2">
+          <h2 className="card-label px-1">Spaces</h2>
+          {matchedSpaces.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="card-row"
+              onClick={() => router.push(`/s/${s.slug}`)}
+            >
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: s.color }}
+              />
+              <span className="flex-1 truncate text-left">{s.name}</span>
+              <SpaceBadge name={s.name} color={s.color} />
+            </button>
+          ))}
+        </section>
+      ) : null}
     </div>
   );
 }

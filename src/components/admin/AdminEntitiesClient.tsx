@@ -120,7 +120,7 @@ export function AdminEntitiesClient() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
 
       <div className="flex flex-wrap gap-2 px-2">
@@ -128,10 +128,10 @@ export function AdminEntitiesClient() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search entities…"
-          className="input input-bordered input-sm"
+          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30"
         />
         <select
-          className="select select-bordered select-sm"
+          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30"
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
         >
@@ -143,7 +143,7 @@ export function AdminEntitiesClient() {
           ))}
         </select>
         <select
-          className="select select-bordered select-sm"
+          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
@@ -154,11 +154,11 @@ export function AdminEntitiesClient() {
         </select>
       </div>
 
-      {error ? <p className="type-body text-error px-2">{error}</p> : null}
+      {error ? <p className="type-body text-[#ff3b30] px-2">{error}</p> : null}
 
       <div className="flex flex-col gap-0.5">
         {entities.length === 0 ? (
-          <p className="px-2 py-6 type-body opacity-60 max-w-xl">
+          <p className="px-2 py-6 type-body text-[var(--ink-soft)] max-w-xl">
             No entities yet. People and organizations appear here when editors
             link them during upload or from a file&apos;s Relations panel. Use
             merge later to clean up near-duplicates.
@@ -167,7 +167,7 @@ export function AdminEntitiesClient() {
           entities.map((e) => (
             <div
               key={e.id}
-              className="px-2 py-3 hover:bg-base-200 flex flex-wrap items-center gap-2"
+              className="px-2 py-3 hover:bg-white/45 flex flex-wrap items-center gap-2"
             >
               <span
                 className="h-1.5 w-1.5 shrink-0"
@@ -182,7 +182,7 @@ export function AdminEntitiesClient() {
                 >
                   {e.name}
                 </Link>
-                <p className="type-caption opacity-60">
+                <p className="type-caption text-[var(--ink-soft)]">
                   {e.entity_type?.label || "Entity"}
                   {" · "}
                   {e.document_count ?? 0}{" "}
@@ -261,7 +261,7 @@ export function AdminEntitiesClient() {
             className="flex flex-col gap-3"
           >
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Name
               </legend>
               <input
@@ -272,7 +272,7 @@ export function AdminEntitiesClient() {
               />
             </fieldset>
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Aliases (comma-separated)
               </legend>
               <input
@@ -314,12 +314,12 @@ export function AdminEntitiesClient() {
             onSubmit={saveMerge}
             className="flex flex-col gap-3"
           >
-            <p className="type-body opacity-60">
+            <p className="type-body text-[var(--ink-soft)]">
               Move all document links to another entity, then mark “
               {mergeTarget.name}” as merged. This cannot be undone from the UI.
             </p>
             <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs opacity-60 py-0">
+              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                 Merge into
               </legend>
               <select

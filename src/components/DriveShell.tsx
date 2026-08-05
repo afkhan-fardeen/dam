@@ -5,21 +5,16 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   IconClock,
-  IconFolderPlus,
-  IconLayoutSidebar,
-  IconLayoutSidebarLeftCollapse,
+  IconDots,
+  IconFolder,
+  IconKey,
+  IconLock,
   IconLogout,
-  IconMenu2,
-  IconPlus,
-  IconSearch,
+  IconSettings,
+  IconStar,
   IconTrash,
   IconUpload,
-  IconKey,
   IconUser,
-  IconFiles,
-  IconLock,
-  IconX,
-  IconSettings,
 } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -34,11 +29,12 @@ import { useDriveChrome } from "@/components/DriveChrome";
 import { useFileServerHealth } from "@/lib/useFileServerHealth";
 import { UploadProgressPanel } from "@/components/UploadProgressPanel";
 import { PasswordField } from "@/components/PasswordField";
-import {
-  readSidebarCollapsed,
-  writeSidebarCollapsed,
-} from "@/lib/uiPrefs";
 import { CommandBar } from "@/components/CommandBar";
+import { TopBar } from "@/components/glass/TopBar";
+import { Dock, type DockItem } from "@/components/glass/Dock";
+import { GlassDropdown } from "@/components/glass/GlassDropdown";
+import { GlassButton } from "@/components/glass/GlassButton";
+import { SearchHero } from "@/components/glass/SearchHero";
 
 type DriveShellProps = {
   spaces: Space[];
@@ -74,7 +70,11 @@ export function DriveShell({
   const editable = canEdit(role, profile.is_admin);
   const view = searchParams.get("view") || "all";
   const onHome = pathname === "/";
+  const onSearch = pathname === "/search";
+  const onAdmin = pathname.startsWith("/admin");
+  const onEntity = pathname.startsWith("/e/");
   const online = health === "connected" && serverOnline;
+  const showHomeHero = onHome && view === "all";
 
   const showTrash =
     profile.is_admin || memberships.some((m) => m.role === "editor");
@@ -83,52 +83,32 @@ export function DriveShell({
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
-  const [drawerId] = useState(() => "drive-drawer");
-
-  useEffect(() => {
-    setCollapsed(readSidebarCollapsed());
-  }, []);
 
   useEffect(() => {
     setQuery(searchParams.get("q") || "");
   }, [searchParams]);
 
-  // Live search: navigate as you type (debounced)
+  // Live search from slim top search (non-home pages)
   useEffect(() => {
+    if (showHomeHero) return;
     const trimmed = query.trim();
-    const onSearchPage = pathname === "/search";
     const urlQ = (searchParams.get("q") || "").trim();
 
     const handle = window.setTimeout(() => {
       if (!trimmed) {
-        if (onSearchPage) router.push("/");
+        if (onSearch) router.push("/");
         return;
       }
-      if (trimmed === urlQ && onSearchPage) return;
+      if (trimmed === urlQ && onSearch) return;
       router.push(`/search?q=${encodeURIComponent(trimmed)}`);
     }, 180);
 
     return () => window.clearTimeout(handle);
-  }, [query, pathname, router, searchParams]);
-
-  function toggleCollapsed() {
-    setCollapsed((prev) => {
-      const next = !prev;
-      writeSidebarCollapsed(next);
-      return next;
-    });
-  }
-
-  function closeDrawer() {
-    const el = document.getElementById(drawerId) as HTMLInputElement | null;
-    if (el) el.checked = false;
-  }
+  }, [query, pathname, router, searchParams, showHomeHero, onSearch]);
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = query.trim();
-    closeDrawer();
     if (!trimmed) {
       router.push(activeSlug ? `/s/${activeSlug}` : "/");
       return;
@@ -171,398 +151,300 @@ export function DriveShell({
       .join("");
   }, [profile]);
 
-  const statusLabel =
-    health === "connected"
-      ? "Connected"
-      : health === "checking"
-        ? "Checking…"
-        : "Server offline";
-
-  const statusBadge =
-    health === "connected"
-      ? "badge-success"
-      : health === "checking"
-        ? "badge-neutral"
-        : "badge-error";
-
   const uploadDisabled = !online || view === "trash";
-  const uploadTooltip =
-    view === "trash"
-      ? "Switch out of Trash to upload"
-      : !online
-        ? "File server is offline — uploads are paused"
-        : "";
+  const canUploadHere =
+    editable && (Boolean(activeSlug) || onHome || onSearch) && !uploadDisabled;
 
-  const allActive = onHome && view === "all";
-  const recentActive = onHome && view === "recent";
-  const trashActive =
-    (onHome || Boolean(activeSlug)) && view === "trash";
+  const dockItems: DockItem[] = useMemo(() => {
+    if (onAdmin) {
+      const tabs = [
+        { id: "spaces", label: "Spaces", href: "/admin/spaces" },
+        { id: "users", label: "Users", href: "/admin/users" },
+        { id: "tags", label: "Tags", href: "/admin/tags" },
+        { id: "entities", label: "Entities", href: "/admin/entities" },
+        { id: "attributes", label: "Attributes", href: "/admin/attributes" },
+        { id: "activity", label: "Activity", href: "/admin/activity" },
+      ];
+      return tabs.map((t) => ({
+        ...t,
+        primary: pathname.startsWith(t.href),
+        active: pathname.startsWith(t.href),
+      }));
+    }
 
-  const sidebarWidth = collapsed ? "w-14" : "w-60";
+    if (onSearch) {
+      return [
+        {
+          id: "upload",
+          label: "Upload",
+          icon: <IconUpload size={15} stroke={1.75} />,
+          primary: true,
+          disabled: !canUploadHere,
+          onClick: () => {
+            if (!activeSlug && spaces[0]) {
+              router.push(`/s/${spaces[0].slug}`);
+              window.setTimeout(() => requestUpload(), 100);
+            } else {
+              requestUpload();
+            }
+          },
+        },
+        {
+          id: "new-search",
+          label: "New Search",
+          onClick: () => {
+            setQuery("");
+            router.push("/");
+          },
+        },
+        {
+          id: "spaces",
+          label: "Spaces",
+          icon: <IconFolder size={15} stroke={1.75} />,
+          href: spaces[0] ? `/s/${spaces[0].slug}` : "/",
+        },
+      ];
+    }
+
+    if (activeSlug) {
+      const items: DockItem[] = [
+        {
+          id: "upload",
+          label: "Upload",
+          icon: <IconUpload size={15} stroke={1.75} />,
+          primary: true,
+          disabled: uploadDisabled || !editable,
+          onClick: () => requestUpload(),
+        },
+        {
+          id: "folder",
+          label: "New folder",
+          icon: <IconFolder size={15} stroke={1.75} />,
+          disabled: !editable,
+          onClick: () => requestNewFolder(),
+        },
+        {
+          id: "home",
+          label: "Home",
+          href: "/",
+        },
+      ];
+      if (showTrash) {
+        items.push({
+          id: "trash",
+          label: "Trash",
+          icon: <IconTrash size={15} stroke={1.75} />,
+          href: `/?view=trash`,
+          active: view === "trash",
+        });
+      }
+      items.push({
+        id: "settings",
+        icon: <IconSettings size={15} stroke={1.75} />,
+        title: "Settings",
+        dividerBefore: true,
+        onClick: () => {
+          setPasswordOpen(true);
+          setPasswordMsg(null);
+        },
+      });
+      return items;
+    }
+
+    // Home / list views
+    const homeItems: DockItem[] = [
+      {
+        id: "upload",
+        label: "Upload",
+        icon: <IconUpload size={15} stroke={1.75} />,
+        primary: true,
+        disabled: uploadDisabled,
+        onClick: () => {
+          if (spaces[0]) {
+            router.push(`/s/${spaces[0].slug}`);
+            window.setTimeout(() => requestUpload(), 150);
+          }
+        },
+        title: spaces[0] ? undefined : "No space to upload into",
+      },
+      {
+        id: "favorites",
+        label: "Favorites",
+        icon: <IconStar size={15} stroke={1.75} />,
+        href: "/?view=favorites",
+        active: view === "favorites",
+      },
+      {
+        id: "recent",
+        label: "Recent",
+        icon: <IconClock size={15} stroke={1.75} />,
+        href: "/?view=recent",
+        active: view === "recent",
+      },
+      {
+        id: "spaces",
+        label: "Spaces",
+        icon: <IconFolder size={15} stroke={1.75} />,
+        href: spaces[0] ? `/s/${spaces[0].slug}` : "/",
+      },
+      {
+        id: "settings",
+        icon: <IconSettings size={15} stroke={1.75} />,
+        title: "Settings",
+        dividerBefore: true,
+        onClick: () => {
+          setPasswordOpen(true);
+          setPasswordMsg(null);
+        },
+      },
+    ];
+    return homeItems;
+  }, [
+    onAdmin,
+    onSearch,
+    activeSlug,
+    pathname,
+    canUploadHere,
+    uploadDisabled,
+    editable,
+    spaces,
+    showTrash,
+    view,
+    router,
+    requestUpload,
+    requestNewFolder,
+  ]);
+
+  const avatarTrigger = (
+    <span className="inline-flex items-center justify-center h-8 w-8 rounded-full glass text-[11px] font-semibold text-[var(--ink)]">
+      {initials || <IconUser size={14} />}
+    </span>
+  );
+
+  const moreMenu = (
+    <span className="min-[1180px]:hidden">
+      <GlassDropdown
+        align="left"
+        widthClass="w-[260px]"
+        trigger={
+          <span className="dock-btn !py-1.5 !px-2.5 ml-1" title="More">
+            <IconDots size={16} stroke={1.75} />
+          </span>
+        }
+      >
+        <p className="card-label px-2.5 pt-1 pb-1">Spaces</p>
+        {spaces.length === 0 ? (
+          <p className="type-caption px-2.5 py-2">No spaces yet</p>
+        ) : (
+          spaces.map((space) => (
+            <Link key={space.id} href={`/s/${space.slug}`} className="card-row">
+              <span
+                className="h-2 w-2 rounded-full shrink-0"
+                style={{ backgroundColor: space.color }}
+              />
+              <span className="truncate flex-1">{space.name}</span>
+              {space.requires_passcode ? (
+                <IconLock size={13} className="text-[var(--ink-faint)]" />
+              ) : null}
+            </Link>
+          ))
+        )}
+        <div className="card-divider" />
+        <Link href="/?view=favorites" className="card-row">
+          <IconStar size={14} /> Favorites
+        </Link>
+        <Link href="/?view=recent" className="card-row">
+          <IconClock size={14} /> Recent
+        </Link>
+        {showTrash ? (
+          <Link href="/?view=trash" className="card-row">
+            <IconTrash size={14} /> Trash
+          </Link>
+        ) : null}
+      </GlassDropdown>
+    </span>
+  );
 
   return (
-    <div className="drawer lg:drawer-open min-h-screen">
-      <input id={drawerId} type="checkbox" className="drawer-toggle" />
-
-      <div className="drawer-content flex flex-col min-h-screen bg-base-100">
-        {viewingAs ? (
-          <div className="shrink-0 bg-neutral text-neutral-content px-4 py-2 flex items-center justify-between gap-3 type-body">
-            <span>
-              Viewing as {viewingAs.full_name || viewingAs.email || "user"}
-            </span>
-            <button
-              type="button"
-              onClick={() => void exitViewAs()}
-              className="btn btn-ghost btn-xs text-neutral-content"
-            >
-              Exit
-            </button>
-          </div>
-        ) : null}
-
-        <div className="navbar min-h-14 bg-base-100 border-b border-base-300 px-3 sm:px-4 gap-3 sticky top-0 z-40 justify-start">
-          <div className="flex-none lg:hidden">
-            <label
-              htmlFor={drawerId}
-              className="btn btn-ghost btn-square"
-              aria-label="Open menu"
-            >
-              <IconMenu2 size={20} />
-            </label>
-          </div>
-
-          <div className="flex-1 min-w-0 flex justify-start">
-            <form onSubmit={submitSearch} className="w-full max-w-xl">
-              <label className="input input-bordered input-sm h-10 flex items-center gap-2 w-full bg-base-200 border-transparent focus-within:border-base-300 focus-within:bg-base-100">
-                <IconSearch size={16} className="opacity-45 shrink-0" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search files…"
-                  className="grow min-w-0"
-                />
-                {query ? (
-                  <button
-                    type="button"
-                    aria-label="Clear search"
-                    className="btn btn-ghost btn-xs btn-square"
-                    onClick={() => {
-                      setQuery("");
-                      if (pathname === "/search") router.push("/");
-                    }}
-                  >
-                    <IconX size={14} />
-                  </button>
-                ) : null}
-              </label>
-            </form>
-          </div>
-
-          <div className="flex-none flex items-center gap-2">
-            {editable && activeSlug ? (
-              <div className="dropdown dropdown-end">
-                <div
-                  tabIndex={0}
-                  role="button"
-                  className="btn btn-primary btn-sm gap-1.5"
-                >
-                  <IconPlus size={16} />
-                  <span className="hidden sm:inline">New</span>
-                </div>
-                <ul
-                  tabIndex={0}
-                  className="dropdown-content menu bg-base-100 z-[100] w-48 p-1.5 shadow border border-base-300 type-body"
-                >
-                  <li>
-                    <button
-                      type="button"
-                      className="gap-2 py-2"
-                      onClick={() => requestNewFolder()}
-                    >
-                      <IconFolderPlus size={15} className="shrink-0" />
-                      New folder
-                    </button>
-                  </li>
-                  <li>
-                    <div
-                      className={
-                        uploadDisabled ? "tooltip tooltip-left w-full" : "w-full"
-                      }
-                      data-tip={uploadDisabled ? uploadTooltip : undefined}
-                    >
-                      <button
-                        type="button"
-                        disabled={uploadDisabled}
-                        className="w-full gap-2 py-2"
-                        onClick={() => {
-                          if (uploadDisabled) return;
-                          requestUpload();
-                        }}
-                      >
-                        <IconUpload size={15} className="shrink-0" />
-                        Upload file
-                      </button>
-                    </div>
-                  </li>
-                </ul>
-              </div>
-            ) : null}
-
-            <div
-              className="flex items-center gap-2 px-1"
-              title={statusLabel}
-            >
-              <span className={`badge badge-xs ${statusBadge}`} />
-              <span className="type-caption opacity-60 hidden sm:inline">
-                {statusLabel}
-              </span>
-            </div>
-          </div>
+    <div className="min-h-screen flex flex-col relative">
+      {viewingAs ? (
+        <div className="shrink-0 glass mx-3 mt-2 px-4 py-2 flex items-center justify-between gap-3 type-body">
+          <span>
+            Viewing as {viewingAs.full_name || viewingAs.email || "user"}
+          </span>
+          <GlassButton variant="glass" onClick={() => void exitViewAs()}>
+            Exit
+          </GlassButton>
         </div>
+      ) : null}
 
-        <main className="flex-1 min-w-0 overflow-auto">{children}</main>
-      </div>
-
-      <div className="drawer-side z-30">
-        <label
-          htmlFor={drawerId}
-          aria-label="Close menu"
-          className="drawer-overlay"
-        />
-        <aside
-          className={`bg-base-100 min-h-full ${sidebarWidth} flex flex-col border-r border-base-300`}
-        >
-          <div
-            className={`flex items-center h-14 border-b border-base-300 shrink-0 ${
-              collapsed ? "justify-center px-1" : "gap-1 px-2"
-            }`}
-          >
-            {!collapsed ? (
-              <Link
-                href="/"
-                onClick={closeDrawer}
-                className="flex-1 min-w-0 px-2 py-1.5 hover:bg-base-200"
-              >
-                <span className="block type-label truncate leading-tight">
-                  Company assets
-                </span>
-                <span className="block type-caption opacity-50 truncate leading-tight">
-                  Drive
-                </span>
+      <TopBar
+        more={showHomeHero || onHome ? moreMenu : undefined}
+        trailing={
+          <GlassDropdown trigger={avatarTrigger}>
+            {profile.is_admin ? (
+              <Link href="/admin/spaces" className="card-row">
+                <IconSettings size={15} /> Admin
               </Link>
             ) : null}
             <button
               type="button"
-              className="btn btn-ghost btn-sm btn-square hidden lg:inline-flex"
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={toggleCollapsed}
+              className="card-row"
+              onClick={() => {
+                setPasswordOpen(true);
+                setPasswordMsg(null);
+              }}
             >
-              {collapsed ? (
-                <IconLayoutSidebar size={18} />
-              ) : (
-                <IconLayoutSidebarLeftCollapse size={18} />
-              )}
+              <IconKey size={15} /> Change password
             </button>
-            <label
-              htmlFor={drawerId}
-              className="btn btn-ghost btn-sm btn-square lg:hidden"
-              aria-label="Close menu"
+            <div className="card-divider" />
+            <button
+              type="button"
+              className="card-row text-[#ff3b30]"
+              onClick={() => void signOut()}
             >
-              <IconX size={18} />
-            </label>
-          </div>
+              <IconLogout size={15} /> Sign out
+            </button>
+          </GlassDropdown>
+        }
+      />
 
-          <nav
-            className={`flex-1 overflow-y-auto flex flex-col gap-0.5 ${
-              collapsed ? "items-center px-1 py-2" : "px-2 py-2"
-            }`}
-          >
-            {!collapsed ? (
-              <p className="type-micro opacity-45 px-2 pt-1 pb-1">
-                Spaces
-              </p>
-            ) : null}
-            {spaces.length === 0 ? (
-              !collapsed ? (
-                <p className="px-2 type-caption opacity-50">No spaces yet</p>
-              ) : null
-            ) : (
-              spaces.map((space) => {
-                const active = activeSlug === space.slug;
-                const locked = Boolean(space.requires_passcode);
-                return (
-                  <Link
-                    key={space.id}
-                    href={`/s/${space.slug}`}
-                    onClick={closeDrawer}
-                    title={space.name}
-                    className={`relative flex items-center gap-2 transition-colors ${
-                      collapsed
-                        ? "justify-center w-10 h-10"
-                        : "w-full px-2 py-2"
-                    } ${
-                      active
-                        ? "bg-base-200 font-medium"
-                        : "hover:bg-base-200"
-                    }`}
-                  >
-                    <span
-                      className="inline-block h-2.5 w-2.5 shrink-0"
-                      style={{ backgroundColor: space.color }}
-                    />
-                    {!collapsed ? (
-                      <>
-                        <span className="truncate flex-1 text-left type-label">
-                          {space.name}
-                        </span>
-                        {locked ? (
-                          <IconLock size={14} className="opacity-50 shrink-0" />
-                        ) : null}
-                      </>
-                    ) : locked ? (
-                      <IconLock
-                        size={10}
-                        className="absolute bottom-1 right-1 opacity-60"
-                      />
-                    ) : null}
-                  </Link>
-                );
-              })
-            )}
-
-            <hr
-              className={`border-base-300 my-2 ${collapsed ? "w-8" : "mx-1"}`}
+      {!showHomeHero && !onEntity ? (
+        <div className="px-4 sm:px-6 pb-3 max-w-3xl mx-auto w-full">
+          {onSearch || (!onAdmin && !activeSlug) ? (
+            <SearchHero
+              value={query}
+              onChange={setQuery}
+              onSubmit={submitSearch}
+              placeholder="Search…"
+              showCmdK={onSearch}
+              glow={onSearch}
+              slim
             />
-
-            {!collapsed ? (
-              <p className="type-micro opacity-45 px-2 pt-0.5 pb-1">
-                Browse
-              </p>
-            ) : null}
-
-            {(
-              [
-                {
-                  href: "/",
-                  label: "All files",
-                  active: allActive,
-                  icon: IconFiles,
-                },
-                {
-                  href: "/?view=recent",
-                  label: "Recent",
-                  active: recentActive,
-                  icon: IconClock,
-                },
-                ...(showTrash
-                  ? [
-                      {
-                        href: "/?view=trash",
-                        label: "Trash",
-                        active: trashActive,
-                        icon: IconTrash,
-                      },
-                    ]
-                  : []),
-              ] as {
-                href: string;
-                label: string;
-                active: boolean;
-                icon: typeof IconFiles;
-              }[]
-            ).map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={closeDrawer}
-                title={item.label}
-                className={`flex items-center gap-2 transition-colors ${
-                  collapsed
-                    ? "justify-center w-10 h-10"
-                    : "w-full px-2 py-2"
-                } ${
-                  item.active ? "bg-base-200 font-medium" : "hover:bg-base-200"
-                }`}
-              >
-                <item.icon size={16} className="text-primary shrink-0" />
-                {!collapsed ? (
-                  <span className="type-label">{item.label}</span>
-                ) : null}
-              </Link>
-            ))}
-          </nav>
-
-          <div
-            className={`shrink-0 border-t border-base-300 ${
-              collapsed ? "p-1 flex justify-center" : "p-2"
-            }`}
-          >
-            <div
-              className={`dropdown ${collapsed ? "dropdown-right dropdown-end" : "dropdown-top dropdown-end"} w-full ${collapsed ? "w-auto" : ""}`}
-            >
-              <div
-                tabIndex={0}
-                role="button"
-                className={`btn btn-ghost btn-sm gap-2 ${
-                  collapsed
-                    ? "btn-square w-10 h-10"
-                    : "w-full justify-start px-2 h-auto py-2"
-                }`}
-                title={profile.full_name || profile.email || undefined}
-              >
-                <div className="avatar avatar-placeholder">
-                  <div className="bg-neutral text-neutral-content w-8 h-8">
-                    <span className="type-caption">
-                      {initials || <IconUser size={14} />}
-                    </span>
-                  </div>
-                </div>
-                {!collapsed ? (
-                  <span className="flex-1 min-w-0 text-left">
-                    <span className="block type-label truncate">
-                      {profile.full_name || profile.email}
-                    </span>
-                    <span className="block type-caption opacity-50 truncate">
-                      {profile.is_admin ? "Admin" : "Member"}
-                    </span>
-                  </span>
-                ) : null}
-              </div>
-              <ul
-                tabIndex={0}
-                className="dropdown-content menu bg-base-100 z-[100] w-52 p-2 shadow border border-base-300"
-              >
-                {profile.is_admin ? (
-                  <li>
-                    <Link href="/admin/spaces" onClick={closeDrawer}>
-                      <IconSettings size={16} />
-                      Admin
-                    </Link>
-                  </li>
-                ) : null}
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPasswordOpen(true);
-                      setPasswordMsg(null);
-                    }}
-                  >
-                    <IconKey size={16} />
-                    Change password
-                  </button>
-                </li>
-                <li>
-                  <button type="button" onClick={() => void signOut()}>
-                    <IconLogout size={16} />
-                    Sign out
-                  </button>
-                </li>
-              </ul>
+          ) : activeSlug ? (
+            <div className="flex items-center gap-2 type-title">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: activeSpace?.color }}
+              />
+              {activeSpace?.name}
+              {activeSpace?.requires_passcode ? (
+                <IconLock size={14} className="text-[var(--ink-faint)]" />
+              ) : null}
             </div>
-          </div>
-        </aside>
-      </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <main
+        className={`flex-1 min-w-0 ${
+          showHomeHero ? "" : "overflow-auto pb-28 px-4 sm:px-6"
+        }`}
+      >
+        {children}
+      </main>
+
+      {!onEntity ? <Dock items={dockItems} /> : null}
 
       <UploadProgressPanel />
 
@@ -581,21 +463,23 @@ export function DriveShell({
             setPasswordOpen(false);
           }}
         >
+          <div className="glass-scrim absolute inset-0" />
           <form
             method="dialog"
             onClick={(e) => e.stopPropagation()}
             onSubmit={changePassword}
-            className="modal-box flex flex-col gap-3 rounded-none"
+            className="modal-box glass-strong glass-appear flex flex-col gap-3 !bg-[var(--glass-strong)] border-0 shadow-none"
+            style={{ borderRadius: 22 }}
           >
             <div className="flex items-center gap-2">
               <h2 className="type-title flex-1">Change password</h2>
               <button
                 type="button"
                 aria-label="Close"
-                className="btn btn-ghost btn-sm btn-square"
+                className="dock-btn !px-2"
                 onClick={() => setPasswordOpen(false)}
               >
-                <IconX size={16} />
+                ×
               </button>
             </div>
             <PasswordField
@@ -607,22 +491,21 @@ export function DriveShell({
               autoComplete="new-password"
             />
             {passwordMsg ? (
-              <p className="type-caption opacity-60">{passwordMsg}</p>
+              <p className="type-caption">{passwordMsg}</p>
             ) : null}
-            <div className="modal-action mt-2">
-              <button
-                type="button"
+            <div className="flex justify-end gap-2 mt-2">
+              <GlassButton
+                variant="glass"
                 onClick={() => setPasswordOpen(false)}
-                className="btn btn-ghost"
               >
                 Cancel
-              </button>
-              <button type="submit" className="btn btn-primary">
+              </GlassButton>
+              <GlassButton variant="primary" type="submit">
                 Save
-              </button>
+              </GlassButton>
             </div>
           </form>
-          <form method="dialog" className="modal-backdrop">
+          <form method="dialog" className="modal-backdrop bg-transparent">
             <button type="button" onClick={() => setPasswordOpen(false)}>
               close
             </button>

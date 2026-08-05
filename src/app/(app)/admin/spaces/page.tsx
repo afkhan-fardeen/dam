@@ -7,11 +7,11 @@ export default async function AdminSpacesPage() {
   if (!ok) redirect("/");
 
   return (
-    <div className="p-5 sm:p-8 max-w-2xl">
+    <div className="max-w-4xl mx-auto w-full">
       <h1 className="type-page">
         Spaces
       </h1>
-      <p className="text-sm text-base-content/60 mt-1 mb-2">
+      <p className="type-caption mt-1 mb-2">
         Brands and departments people can open.
       </p>
       <AdminSpacesClient />

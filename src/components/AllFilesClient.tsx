@@ -84,7 +84,9 @@ export function AllFilesClient({
       ? "Recent"
       : view === "trash"
         ? "Trash"
-        : "All files";
+        : view === "favorites" || view === "starred"
+          ? "Favorites"
+          : "All files";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,6 +95,8 @@ export function AllFilesClient({
       const params = new URLSearchParams();
       if (view === "trash" || view === "recent") {
         params.set("view", view);
+      } else if (view === "favorites" || view === "starred") {
+        params.set("view", "starred");
       }
       const res = await fetch(`/api/search?${params.toString()}`);
       const json = await res.json();
@@ -238,14 +242,15 @@ export function AllFilesClient({
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4 sm:p-5 w-full">
+    <div className="flex flex-col gap-4 w-full max-w-5xl mx-auto">
+      <div className="glass p-5 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="type-page">{title}</h1>
         <div className="flex items-center gap-2">
           {view !== "trash" && assets.length > 0 ? (
             <button
               type="button"
-              className={`btn btn-ghost btn-sm ${showTags ? "btn-active" : ""}`}
+              className={`dock-btn ${showTags ? "dock-btn-active" : ""}`}
               onClick={() => setShowTags((v) => !v)}
             >
               {showTags ? "Hide tags" : "Show tags"}
@@ -257,13 +262,13 @@ export function AllFilesClient({
         </div>
       </div>
 
-      {error ? <p className="type-body text-error">{error}</p> : null}
+      {error ? <p className="type-body text-[#ff3b30]">{error}</p> : null}
       {loading ? (
         <div className="flex justify-center py-12">
           <span className="loading loading-spinner loading-md" />
         </div>
       ) : assets.length === 0 ? (
-        <p className="type-body opacity-60">
+        <p className="type-body text-[var(--ink-soft)]">
           {spaces.length === 0
             ? isAdmin
               ? "Create a space in Admin, then come back here."
@@ -348,6 +353,7 @@ export function AllFilesClient({
           })}
         </div>
       )}
+      </div>
 
       {selected ? (
         <AssetDetail
