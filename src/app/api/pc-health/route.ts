@@ -44,8 +44,13 @@ export async function GET() {
       });
     }
 
-    const body = (await upstream.json()) as { ok?: unknown };
-    if (body?.ok !== true) {
+    const body = (await upstream.json()) as {
+      ok?: unknown;
+      status?: unknown;
+    };
+    // Windows file API returns { status: "ok" }; sketch used { ok: true }.
+    const healthy = body?.ok === true || body?.status === "ok";
+    if (!healthy) {
       return NextResponse.json({
         connected: false,
         reason: "bad_payload",
