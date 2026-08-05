@@ -35,6 +35,7 @@ import { Dock, type DockItem } from "@/components/glass/Dock";
 import { GlassDropdown } from "@/components/glass/GlassDropdown";
 import { GlassButton } from "@/components/glass/GlassButton";
 import { SearchHero } from "@/components/glass/SearchHero";
+import { navigateWithTransition } from "@/components/glass/useViewTransitionNavigate";
 
 type DriveShellProps = {
   spaces: Space[];
@@ -96,11 +97,14 @@ export function DriveShell({
 
     const handle = window.setTimeout(() => {
       if (!trimmed) {
-        if (onSearch) router.push("/");
+        if (onSearch) navigateWithTransition(router, "/");
         return;
       }
       if (trimmed === urlQ && onSearch) return;
-      router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+      navigateWithTransition(
+        router,
+        `/search?q=${encodeURIComponent(trimmed)}`,
+      );
     }, 180);
 
     return () => window.clearTimeout(handle);
@@ -110,10 +114,16 @@ export function DriveShell({
     e.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) {
-      router.push(activeSlug ? `/s/${activeSlug}` : "/");
+      navigateWithTransition(
+        router,
+        activeSlug ? `/s/${activeSlug}` : "/",
+      );
       return;
     }
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    navigateWithTransition(
+      router,
+      `/search?q=${encodeURIComponent(trimmed)}`,
+    );
   }
 
   async function signOut() {
@@ -182,7 +192,7 @@ export function DriveShell({
           disabled: !canUploadHere,
           onClick: () => {
             if (!activeSlug && spaces[0]) {
-              router.push(`/s/${spaces[0].slug}`);
+              navigateWithTransition(router, `/s/${spaces[0].slug}`);
               window.setTimeout(() => requestUpload(), 100);
             } else {
               requestUpload();
@@ -194,7 +204,7 @@ export function DriveShell({
           label: "New Search",
           onClick: () => {
             setQuery("");
-            router.push("/");
+            navigateWithTransition(router, "/");
           },
         },
         {
@@ -261,7 +271,7 @@ export function DriveShell({
         disabled: uploadDisabled,
         onClick: () => {
           if (spaces[0]) {
-            router.push(`/s/${spaces[0].slug}`);
+            navigateWithTransition(router, `/s/${spaces[0].slug}`);
             window.setTimeout(() => requestUpload(), 150);
           }
         },
@@ -337,7 +347,7 @@ export function DriveShell({
           <p className="type-caption px-2.5 py-2">No spaces yet</p>
         ) : (
           spaces.map((space) => (
-            <Link key={space.id} href={`/s/${space.slug}`} className="card-row">
+            <Link key={space.id} href={`/s/${space.slug}`} className="menu-row">
               <span
                 className="h-2 w-2 rounded-full shrink-0"
                 style={{ backgroundColor: space.color }}
@@ -350,14 +360,14 @@ export function DriveShell({
           ))
         )}
         <div className="card-divider" />
-        <Link href="/?view=favorites" className="card-row">
+        <Link href="/?view=favorites" className="menu-row">
           <IconStar size={14} /> Favorites
         </Link>
-        <Link href="/?view=recent" className="card-row">
+        <Link href="/?view=recent" className="menu-row">
           <IconClock size={14} /> Recent
         </Link>
         {showTrash ? (
-          <Link href="/?view=trash" className="card-row">
+          <Link href="/?view=trash" className="menu-row">
             <IconTrash size={14} /> Trash
           </Link>
         ) : null}
@@ -383,13 +393,13 @@ export function DriveShell({
         trailing={
           <GlassDropdown trigger={avatarTrigger}>
             {profile.is_admin ? (
-              <Link href="/admin/spaces" className="card-row">
+              <Link href="/admin/spaces" className="menu-row">
                 <IconSettings size={15} /> Admin
               </Link>
             ) : null}
             <button
               type="button"
-              className="card-row"
+              className="menu-row"
               onClick={() => {
                 setPasswordOpen(true);
                 setPasswordMsg(null);
@@ -400,7 +410,7 @@ export function DriveShell({
             <div className="card-divider" />
             <button
               type="button"
-              className="card-row text-[#ff3b30]"
+              className="menu-row menu-row-danger"
               onClick={() => void signOut()}
             >
               <IconLogout size={15} /> Sign out
@@ -437,7 +447,7 @@ export function DriveShell({
       ) : null}
 
       <main
-        className={`flex-1 min-w-0 ${
+        className={`glass-content-root flex-1 min-w-0 ${
           showHomeHero ? "" : "overflow-auto pb-28 px-4 sm:px-6"
         }`}
       >
@@ -468,7 +478,7 @@ export function DriveShell({
             method="dialog"
             onClick={(e) => e.stopPropagation()}
             onSubmit={changePassword}
-            className="modal-box glass-strong glass-appear flex flex-col gap-3 !bg-[var(--glass-strong)] border-0 shadow-none"
+            className="modal-box glass-content glass-appear flex flex-col gap-3 !bg-[var(--content-glass)] border-0 shadow-none"
             style={{ borderRadius: 22 }}
           >
             <div className="flex items-center gap-2">

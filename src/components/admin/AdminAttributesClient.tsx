@@ -90,7 +90,7 @@ export function AdminAttributesClient() {
   }
 
   return (
-    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
+    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
 
       <div className="flex justify-end px-2">

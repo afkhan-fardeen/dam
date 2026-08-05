@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { IconFilter } from "@tabler/icons-react";
 import { AssetCard } from "@/components/AssetCard";
 import { entityTypeColor } from "@/components/EntityChip";
 import { GlassDropdown } from "@/components/glass/GlassDropdown";
 import { SpaceBadge } from "@/components/glass/TagChip";
+import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
+import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
 import type { Asset, Entity, Space } from "@/lib/types";
 
 type GlobalSearchClientProps = {
@@ -14,7 +16,7 @@ type GlobalSearchClientProps = {
 };
 
 export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
-  const router = useRouter();
+  const navigate = useViewTransitionNavigate();
   const searchParams = useSearchParams();
   const q = searchParams.get("q") || "";
   const spaceFilter = searchParams.get("space") || "";
@@ -80,14 +82,14 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     const params = new URLSearchParams();
     if (asset.folder_id) params.set("folder", asset.folder_id);
     params.set("asset", asset.id);
-    router.push(`/s/${space.slug}?${params.toString()}`);
+    navigate(`/s/${space.slug}?${params.toString()}`);
   }
 
   function setSpaceFilter(id: string) {
     const params = new URLSearchParams(searchParams.toString());
     if (id) params.set("space", id);
     else params.delete("space");
-    router.push(`/search?${params.toString()}`);
+    navigate(`/search?${params.toString()}`);
   }
 
   return (
@@ -145,12 +147,14 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
 
       {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
 
+      {loading ? <GlassSkeleton rows={4} className="mt-2" /> : null}
+
       {!loading &&
       q.trim() &&
       filteredAssets.length === 0 &&
       entities.length === 0 &&
       matchedSpaces.length === 0 ? (
-        <div className="glass p-8 text-center">
+        <div className="glass-content p-8 text-center">
           <p className="type-body text-[var(--ink-soft)]">
             Nothing matched “{q.trim()}”. Try an entity name, invoice number, or
             file title.
@@ -159,7 +163,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
       ) : null}
 
       {entities.length > 0 ? (
-        <section className="glass p-4 flex flex-col gap-2">
+        <section className="glass-content p-4 flex flex-col gap-2">
           <h2 className="card-label px-1">Entities</h2>
           <div className="flex flex-col gap-0.5">
             {entities.map((e) => (
@@ -167,7 +171,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
                 key={e.id}
                 type="button"
                 className="card-row"
-                onClick={() => router.push(`/e/${e.id}`)}
+                onClick={() => navigate(`/e/${e.id}`)}
               >
                 <span
                   className="h-2 w-2 rounded-full shrink-0"
@@ -186,7 +190,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
       ) : null}
 
       {filteredAssets.length > 0 ? (
-        <section className="glass p-4 flex flex-col gap-3">
+        <section className="glass-content p-4 flex flex-col gap-3">
           <h2 className="card-label px-1">Documents</h2>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
             {filteredAssets.map((asset) => {
@@ -215,14 +219,14 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
       ) : null}
 
       {matchedSpaces.length > 0 ? (
-        <section className="glass p-4 flex flex-col gap-2">
+        <section className="glass-content p-4 flex flex-col gap-2">
           <h2 className="card-label px-1">Spaces</h2>
           {matchedSpaces.map((s) => (
             <button
               key={s.id}
               type="button"
               className="card-row"
-              onClick={() => router.push(`/s/${s.slug}`)}
+              onClick={() => navigate(`/s/${s.slug}`)}
             >
               <span
                 className="h-2 w-2 rounded-full"

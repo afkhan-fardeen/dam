@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { IconLock, IconStar } from "@tabler/icons-react";
 import { SearchHero } from "@/components/glass/SearchHero";
@@ -49,7 +49,7 @@ function formatDate(): string {
 }
 
 export function HomeGlass({ spaces, profileName }: HomeGlassProps) {
-  const router = useRouter();
+  const navigate = useViewTransitionNavigate();
   const [query, setQuery] = useState("");
   const [recent, setRecent] = useState<Asset[]>([]);
   const [favorites, setFavorites] = useState<Asset[]>([]);
@@ -93,7 +93,7 @@ export function HomeGlass({ spaces, profileName }: HomeGlassProps) {
     e.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) return;
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    navigate(`/search?q=${encodeURIComponent(trimmed)}`);
   }
 
   // Live navigate while typing (debounced) — matches DriveShell search
@@ -101,10 +101,10 @@ export function HomeGlass({ spaces, profileName }: HomeGlassProps) {
     const trimmed = query.trim();
     const handle = window.setTimeout(() => {
       if (!trimmed) return;
-      router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+      navigate(`/search?q=${encodeURIComponent(trimmed)}`);
     }, 400);
     return () => window.clearTimeout(handle);
-  }, [query, router]);
+  }, [query, navigate]);
 
   const suggestions = (
     <>
@@ -115,7 +115,7 @@ export function HomeGlass({ spaces, profileName }: HomeGlassProps) {
           className="tag-chip hover:bg-white/55 transition-colors"
           onClick={() => {
             setQuery(s);
-            router.push(`/search?q=${encodeURIComponent(s)}`);
+            navigate(`/search?q=${encodeURIComponent(s)}`);
           }}
         >
           {s}

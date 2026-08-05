@@ -5,6 +5,8 @@ import Link from "next/link";
 import { AssetCard } from "@/components/AssetCard";
 import { EntityChip, entityTypeColor } from "@/components/EntityChip";
 import { GlassButton } from "@/components/glass/GlassButton";
+import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
+import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
 import type { Asset, Entity } from "@/lib/types";
 
 type EntityProfileClientProps = {
@@ -12,6 +14,7 @@ type EntityProfileClientProps = {
 };
 
 export function EntityProfileClient({ entityId }: EntityProfileClientProps) {
+  const navigate = useViewTransitionNavigate();
   const [entity, setEntity] = useState<Entity | null>(null);
   const [documents, setDocuments] = useState<Asset[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -45,21 +48,21 @@ export function EntityProfileClient({ entityId }: EntityProfileClientProps) {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto glass-strong p-8 glass-appear">
-        <p className="type-body text-[var(--ink-soft)]">Loading entity…</p>
+      <div className="max-w-4xl mx-auto">
+        <GlassSkeleton rows={5} className="glass-appear" />
       </div>
     );
   }
 
   if (error || !entity) {
     return (
-      <div className="max-w-lg mx-auto glass-strong p-8 glass-appear flex flex-col gap-3">
+      <div className="max-w-lg mx-auto glass-content p-8 glass-appear flex flex-col gap-3">
         <h1 className="type-page">Entity not found</h1>
         <p className="type-body text-[var(--ink-soft)]">
           {error ||
             "This entity does not exist, or it was merged into another one."}
         </p>
-        <GlassButton variant="primary" onClick={() => { window.location.href = "/"; }}>
+        <GlassButton variant="primary" onClick={() => navigate("/")}>
           Go home
         </GlassButton>
       </div>
@@ -69,7 +72,7 @@ export function EntityProfileClient({ entityId }: EntityProfileClientProps) {
   const color = entityTypeColor(entity.entity_type?.name);
 
   return (
-    <div className="max-w-4xl mx-auto glass-strong p-6 sm:p-8 glass-appear flex flex-col gap-8 mb-8">
+    <div className="max-w-4xl mx-auto glass-content p-6 sm:p-8 glass-appear flex flex-col gap-8 mb-8">
       <header className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <span
@@ -132,7 +135,7 @@ export function EntityProfileClient({ entityId }: EntityProfileClientProps) {
                     : null
                 }
                 onClick={() => {
-                  window.location.href = `/search?q=${encodeURIComponent(asset.original_name || "")}`;
+                  navigate(`/search?q=${encodeURIComponent(asset.original_name || "")}`);
                 }}
               />
             ))}

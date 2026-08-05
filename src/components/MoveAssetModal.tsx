@@ -95,7 +95,7 @@ export function MoveAssetModal({
         </p>
         {loading ? (
           <div className="flex justify-center py-6">
-            <span className="loading loading-spinner loading-sm" />
+            <span className="glass-shimmer inline-block h-4 w-4 rounded-full" />
           </div>
         ) : (
           <select

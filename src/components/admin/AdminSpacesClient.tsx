@@ -255,7 +255,7 @@ export function AdminSpacesClient() {
   }
 
   return (
-    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
+    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
 
       <div className="flex items-center justify-between gap-3">

@@ -29,6 +29,7 @@
   --ink-faint: #a1a1a6;
   --glass: rgba(255, 255, 255, 0.55);
   --glass-strong: rgba(255, 255, 255, 0.72);
+  --content-glass: rgba(255, 255, 255, 0.92);
   --glass-border: rgba(255, 255, 255, 0.6);
   --line: rgba(60, 60, 67, 0.08);
   --accent: #0071e3;
@@ -38,6 +39,7 @@
   --radius-pill: 100px;
   --radius-card: 17px;
   --radius-hero: 22px;
+  --preview-stage: #1c1c1e;
   --glass-blur: blur(22px) saturate(180%);
   --glass-shadow:
     0 1px 1px rgba(255, 255, 255, 0.8) inset,
@@ -47,6 +49,10 @@
     0 1px 1px rgba(255, 255, 255, 0.85) inset,
     0 14px 40px -10px rgba(30, 30, 60, 0.16),
     0 0 0 1px rgba(255, 255, 255, 0.78);
+  --content-glass-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.9) inset,
+    0 24px 60px -16px rgba(30, 30, 60, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.9);
   --font-glass:
     -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
     var(--font-inter), Inter, system-ui, sans-serif;
@@ -66,12 +72,13 @@
   --radius-selector: var(--radius-card);
 }
 
-/* Fixed pastel wash — never scrolls */
+/* Fixed pastel wash — never scrolls; excluded from view transitions */
 .glass-wash {
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  view-transition-name: glass-wash;
   background:
     radial-gradient(circle at 18% 20%, #eaf2ff 0%, transparent 45%),
     radial-gradient(circle at 82% 15%, #fdeef3 0%, transparent 42%),
@@ -124,23 +131,203 @@ body {
   border-radius: var(--radius-hero);
 }
 
+/* Tier B — readable content (modals, dropdowns, tables, forms) */
+.glass-content {
+  background: var(--content-glass);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  box-shadow: var(--content-glass-shadow);
+  border-radius: var(--radius-card);
+}
+
 .glass-appear {
-  animation: glass-appear 0.18s ease-out both;
+  animation: glass-appear 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.glass-dismiss {
+  animation: glass-dismiss 0.16s ease-in both;
 }
 
 .glass-scrim {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(15, 15, 20, 0.18);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.preview-stage {
+  background: var(--preview-stage);
+  color: #f5f5f7;
+}
+
+.preview-dock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow:
+    0 1px 1px rgba(255, 255, 255, 0.12) inset,
+    0 8px 24px -8px rgba(0, 0, 0, 0.45);
+  color: #fff;
+}
+
+.preview-dock button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.08s ease;
+}
+
+.preview-dock button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.preview-dock button:active {
+  transform: scale(0.97);
 }
 
 @keyframes glass-appear {
   from {
     opacity: 0;
-    transform: scale(0.97);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
     transform: scale(1);
   }
+}
+
+@keyframes glass-dismiss {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes glass-shimmer-sweep {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes route-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse-confirm {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shake-error {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+.glass-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.75) 45%,
+    rgba(255, 255, 255, 0.35) 90%
+  );
+  background-size: 200% 100%;
+  animation: glass-shimmer-sweep 1.5s ease-in-out infinite;
+  border-radius: var(--radius-card);
+}
+
+.glass-shimmer-dark {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.12) 45%,
+    rgba(255, 255, 255, 0.04) 90%
+  );
+  background-size: 200% 100%;
+  animation: glass-shimmer-sweep 1.5s ease-in-out infinite;
+  border-radius: 12px;
+}
+
+.pulse-confirm {
+  animation: pulse-confirm 0.25s ease both;
+}
+
+.shake-error {
+  animation: shake-error 0.3s ease both;
+}
+
+/* Content region for view transitions */
+.glass-content-root {
+  view-transition-name: glass-content;
+}
+
+::view-transition-old(glass-content) {
+  animation: route-out 0.18s ease-in both;
+}
+
+::view-transition-new(glass-content) {
+  animation: route-in 0.22s ease-out both;
+  animation-delay: 40ms;
+}
+
+::view-transition-old(glass-wash),
+::view-transition-new(glass-wash),
+::view-transition-old(glass-topbar),
+::view-transition-new(glass-topbar),
+::view-transition-old(glass-dock),
+::view-transition-new(glass-dock) {
+  animation: none;
+  opacity: 1;
 }
 
 @keyframes search-glow-pulse {
@@ -322,7 +509,11 @@ body {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.25s ease;
   text-decoration: none;
   white-space: nowrap;
 }
@@ -330,6 +521,12 @@ body {
 .dock-btn:hover {
   color: var(--ink);
   background: rgba(255, 255, 255, 0.7);
+  transform: translateY(-1px);
+}
+
+.dock-btn:active {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
 }
 
 .dock-btn-primary {
@@ -342,6 +539,11 @@ body {
   color: #fff;
   opacity: 0.95;
   background: var(--accent-gradient);
+  transform: translateY(-1px);
+}
+
+.dock-btn-primary:active {
+  transform: scale(0.97);
 }
 
 .dock-btn-active {
@@ -355,6 +557,48 @@ body {
   background: rgba(60, 60, 67, 0.12);
   margin: 0 2px;
   flex-shrink: 0;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s ease;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  text-decoration: none;
+}
+
+.menu-row:hover {
+  background: rgba(0, 113, 227, 0.06);
+}
+
+.menu-row-danger {
+  color: #ff3b30;
+}
+
+.lift-card {
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.25s ease,
+    background 0.15s ease;
+}
+
+.lift-card:hover {
+  transform: translateY(-1px);
+}
+
+.lift-card:active {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
 }
 
 .tag-chip {
@@ -429,16 +673,57 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glass-appear {
+  .glass-appear,
+  .glass-dismiss {
+    animation: glass-fade-only 0.15s ease both;
+  }
+
+  .glass-shimmer,
+  .glass-shimmer-dark {
     animation: none;
-    opacity: 1;
-    transform: none;
+    background: rgba(255, 255, 255, 0.45);
+  }
+
+  .glass-shimmer-dark {
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .search-glow::before,
   .search-glow::after {
     animation: none;
     opacity: 0.55;
+  }
+
+  .dock-btn:hover,
+  .dock-btn-primary:hover,
+  .lift-card:hover {
+    transform: none;
+  }
+
+  .dock-btn:active,
+  .dock-btn-primary:active,
+  .lift-card:active,
+  .preview-dock button:active {
+    transform: none;
+  }
+
+  .pulse-confirm,
+  .shake-error {
+    animation: none;
+  }
+
+  ::view-transition-old(glass-content),
+  ::view-transition-new(glass-content) {
+    animation: glass-fade-only 0.15s ease both;
+  }
+}
+
+@keyframes glass-fade-only {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 

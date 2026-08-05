@@ -18,6 +18,7 @@ import { IconDots, IconX } from "@tabler/icons-react";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { MoveAssetModal } from "@/components/MoveAssetModal";
 import { PasswordField } from "@/components/PasswordField";
+import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
 import { uploadFileWithProgress } from "@/lib/upload";
 import { queueAssetDownload } from "@/lib/download";
 import { readViewMode, writeViewMode, type ViewMode } from "@/lib/uiPrefs";
@@ -1407,9 +1408,7 @@ export function SpaceWorkspace({
             {!loading ? ` · ${assets.length}` : ""}
           </h2>
           {loading ? (
-            <div className="flex justify-center py-12">
-              <span className="loading loading-spinner loading-md" />
-            </div>
+            <GlassSkeleton rows={4} />
           ) : assets.length === 0 ? (
             <p className="type-body opacity-60 py-8">
               {view === "trash"

@@ -31,7 +31,10 @@ export function TopBar({
   }, []);
 
   return (
-    <header className="h-[52px] shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 relative z-40">
+    <header
+      className="h-[52px] shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 relative z-40"
+      style={{ viewTransitionName: "glass-topbar" }}
+    >
       <div className="flex items-center gap-2 min-w-0">
         <Link
           href={brandHref}

@@ -7,6 +7,7 @@ import { AssetDetail } from "@/components/AssetDetail";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { MoveAssetModal } from "@/components/MoveAssetModal";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
+import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
 import { canDownload, canEdit, type Asset, type Folder, type Space, type SpaceMembership } from "@/lib/types";
 import { roleForSpace } from "@/lib/auth-client";
 import { readViewMode, writeViewMode, type ViewMode } from "@/lib/uiPrefs";
@@ -243,7 +244,7 @@ export function AllFilesClient({
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-5xl mx-auto">
-      <div className="glass p-5 sm:p-6 flex flex-col gap-4">
+      <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="type-page">{title}</h1>
         <div className="flex items-center gap-2">
@@ -264,9 +265,7 @@ export function AllFilesClient({
 
       {error ? <p className="type-body text-[#ff3b30]">{error}</p> : null}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <span className="loading loading-spinner loading-md" />
-        </div>
+        <GlassSkeleton rows={4} />
       ) : assets.length === 0 ? (
         <p className="type-body text-[var(--ink-soft)]">
           {spaces.length === 0

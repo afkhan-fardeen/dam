@@ -1,3 +1,4 @@
+import { useRouter } from "next/navigation";
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -19,6 +20,7 @@ function generatePassword() {
 type PendingRow = { key: string; space_id: string; role: SpaceRole };
 
 export function AdminUsersClient() {
+  const router = useRouter();
   const [users, setUsers] = useState<Profile[]>([]);
   const [memberships, setMemberships] = useState<SpaceMembership[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -177,7 +179,7 @@ export function AdminUsersClient() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: userId }),
     });
-    window.location.href = "/";
+    router.push("/");
   }
 
   const spaceName = (id: string) => spaces.find((b) => b.id === id)?.name || id;
@@ -185,7 +187,7 @@ export function AdminUsersClient() {
     spaces.find((b) => b.id === id)?.color || "#6b7280";
 
   return (
-    <div className="glass p-5 sm:p-6 flex flex-col gap-4">
+    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
 
       <div className="flex flex-wrap items-center justify-between gap-3">

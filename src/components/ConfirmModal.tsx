@@ -35,7 +35,7 @@ export function ConfirmModal({
     >
       <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <div
-        className="modal-box max-w-sm glass-strong glass-appear !bg-[var(--glass-strong)] border-0 shadow-none"
+        className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
         style={{ borderRadius: 22 }}
       >
         <div className="flex items-start gap-3 mb-3">

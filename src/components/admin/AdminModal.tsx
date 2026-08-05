@@ -44,7 +44,7 @@ export function AdminModal({
     >
       <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <div
-        className={`modal-box flex flex-col max-h-[min(90vh,640px)] p-0 glass-strong glass-appear !bg-[var(--glass-strong)] border-0 shadow-none ${
+        className={`modal-box flex flex-col max-h-[min(90vh,640px)] p-0 glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none ${
           size === "lg" ? "max-w-lg" : "max-w-md"
         }`}
         style={{ borderRadius: 22 }}

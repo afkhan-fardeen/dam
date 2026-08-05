@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode } from "react";
+import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
 
 export type DockItem = {
   id: string;
@@ -22,9 +22,12 @@ type DockProps = {
 };
 
 export function Dock({ items, className = "" }: DockProps) {
+  const navigate = useViewTransitionNavigate();
+
   return (
     <nav
       className={`dock-pill fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[calc(100vw-2rem)] overflow-x-auto ${className}`}
+      style={{ viewTransitionName: "glass-dock" }}
       aria-label="Primary actions"
     >
       {items.map((item) => {
@@ -48,26 +51,19 @@ export function Dock({ items, className = "" }: DockProps) {
         return (
           <span key={item.id} className="contents">
             {item.dividerBefore ? <span className="dock-divider" /> : null}
-            {item.href && !item.disabled ? (
-              <Link
-                href={item.href}
-                className={cls}
-                title={item.title || item.label}
-                onClick={item.onClick}
-              >
-                {content}
-              </Link>
-            ) : (
-              <button
-                type="button"
-                className={cls}
-                title={item.title || item.label}
-                disabled={item.disabled}
-                onClick={item.onClick}
-              >
-                {content}
-              </button>
-            )}
+            <button
+              type="button"
+              className={cls}
+              title={item.title || item.label}
+              disabled={item.disabled}
+              onClick={() => {
+                if (item.disabled) return;
+                item.onClick?.();
+                if (item.href) navigate(item.href);
+              }}
+            >
+              {content}
+            </button>
           </span>
         );
       })}

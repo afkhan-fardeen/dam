@@ -26,6 +26,7 @@ import { queueAssetDownload } from "@/lib/download";
 import { EntityChip } from "@/components/EntityChip";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
 import { AttributeEditor } from "@/components/AttributeEditor";
+import { PreviewSkeleton } from "@/components/glass/GlassSkeleton";
 
 type AssetDetailProps = {
   asset: Asset;
@@ -480,14 +481,15 @@ export function AssetDetail({
 
   function renderTable(table: PreviewTable) {
     return (
-      <div className="h-full w-full overflow-auto bg-base-100 p-3 text-left">
+      <div className="h-full w-full overflow-auto glass-content p-3 text-left text-[var(--ink)]">
         <table className="min-w-full type-caption border-collapse">
           <thead>
             <tr>
               {table.headers.map((h) => (
                 <th
                   key={h}
-                  className="sticky top-0 bg-base-200 px-2 py-1.5 text-left type-label text-base-content border-b border-base-300"
+                  className="sticky top-0 bg-white/80 px-2 py-1.5 text-left type-label text-[var(--ink)]"
+                  style={{ borderBottom: "1px solid var(--line)" }}
                 >
                   {h}
                 </th>
@@ -496,11 +498,12 @@ export function AssetDetail({
           </thead>
           <tbody>
             {table.rows.map((row, ri) => (
-              <tr key={ri} className="odd:bg-base-100 even:bg-base-200">
+              <tr key={ri} className="hover:bg-black/[0.03]">
                 {row.map((cell, ci) => (
                   <td
                     key={ci}
-                    className="px-2 py-1 text-base-content border-b border-base-300/40 whitespace-pre-wrap max-w-[14rem]"
+                    className="px-2 py-1 text-[var(--ink)] whitespace-pre-wrap max-w-[14rem]"
+                    style={{ borderBottom: "1px solid var(--line)" }}
                   >
                     {cell}
                   </td>
@@ -510,7 +513,7 @@ export function AssetDetail({
           </tbody>
         </table>
         {table.capped ? (
-          <p className="mt-2 type-caption opacity-60">
+          <p className="mt-2 type-caption">
             Showing the first {table.rows.length} rows of {table.totalRows} —
             download for the full file.
           </p>
@@ -519,21 +522,24 @@ export function AssetDetail({
     );
   }
 
+  const isMediaStage = Boolean(isImage || isVideo || isPdf);
+  const mediaPending =
+    isMediaStage && !trashMode && !assetUrl && !thumbUrl && Boolean(asset.file_id);
+
   function renderPreview() {
     if (trashMode) {
       return (
-        <div className="flex flex-col items-center gap-3 px-4 text-center">
+        <div className="flex flex-col items-center gap-3 px-4 text-center text-white/70">
           <IconTrash size={40} className="opacity-40" />
-          <p className="text-sm opacity-60">This file is in the trash</p>
+          <p className="text-sm">This file is in the trash</p>
         </div>
       );
     }
+    if (mediaPending) {
+      return <PreviewSkeleton />;
+    }
     if (!assetUrl && !thumbUrl) {
-      return (
-        <p className="type-body text-neutral-content/50">
-          Preview not available
-        </p>
-      );
+      return <p className="type-body text-white/50">Preview not available</p>;
     }
     if (isVideo && assetUrl) {
       return (
@@ -551,7 +557,7 @@ export function AssetDetail({
         <iframe
           title={asset.original_name || "PDF"}
           src={assetUrl}
-          className="h-full w-full bg-base-100"
+          className="h-full w-full bg-[#1c1c1e]"
         />
       );
     }
@@ -569,25 +575,32 @@ export function AssetDetail({
 
     if (docKind === "doc") {
       return (
-        <p className="type-body text-neutral-content/60 px-4 text-center">
-          Legacy .doc files can&apos;t be previewed — download to open.
-        </p>
+        <div className="glass-content p-6 max-w-md text-center">
+          <p className="type-body text-[var(--ink-soft)]">
+            Legacy .doc files can&apos;t be previewed — download to open.
+          </p>
+        </div>
       );
     }
 
     if (docKind && assetUrl) {
       if (docLoading) {
         return (
-          <p className="type-body text-neutral-content/60">Loading preview…</p>
+          <div className="glass-content w-[min(100%,28rem)] h-48 p-4 flex flex-col gap-3">
+            <div className="glass-shimmer h-3" style={{ width: "40%" }} />
+            <div className="glass-shimmer h-3 w-full" />
+            <div className="glass-shimmer h-3 w-full" />
+            <div className="glass-shimmer h-3" style={{ width: "55%" }} />
+          </div>
         );
       }
       if (docError) {
         return (
-          <div className="flex flex-col items-center gap-2 px-4 text-center">
-            <p className="type-body text-neutral-content/60">{docError}</p>
+          <div className="glass-content p-6 flex flex-col items-center gap-2 max-w-md text-center">
+            <p className="type-body text-[var(--ink-soft)]">{docError}</p>
             <button
               type="button"
-              className="type-body underline text-neutral-content/70"
+              className="dock-btn"
               onClick={() => {
                 void queueAssetDownload(
                   asset.file_id,
@@ -605,8 +618,7 @@ export function AssetDetail({
       if (docHtml) {
         return (
           <div
-            className="h-full w-full overflow-auto bg-base-100 p-4 text-left type-body prose-doc"
-            // mammoth output is sanitized HTML from our own file bytes
+            className="h-full w-full overflow-auto glass-content p-4 text-left type-body prose-doc"
             dangerouslySetInnerHTML={{ __html: docHtml }}
           />
         );
@@ -625,26 +637,25 @@ export function AssetDetail({
     }
 
     return (
-      <div className="flex flex-col items-center gap-3 px-4 text-center">
-        <p className="type-body text-neutral-content/60">
-          No in-browser preview — use download.
-        </p>
-        {canDownload && assetUrl && (
-          <button
-            type="button"
-            className="btn btn-primary btn-sm inline-flex items-center gap-1.5"
-            onClick={() => {
-              void queueAssetDownload(
-                asset.file_id,
-                asset.original_name || "download",
-                { upsertJob, removeJob },
-              );
-            }}
-          >
-            <IconDownload size={14} />
-            Download
-          </button>
-        )}
+      <div className="flex flex-col items-center gap-3 px-4 text-center text-white/70">
+        <p className="type-body">No in-browser preview — use download.</p>
+        {canDownload && assetUrl ? (
+          <div className="preview-dock">
+            <button
+              type="button"
+              aria-label="Download"
+              onClick={() => {
+                void queueAssetDownload(
+                  asset.file_id,
+                  asset.original_name || "download",
+                  { upsertJob, removeJob },
+                );
+              }}
+            >
+              <IconDownload size={16} />
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -658,8 +669,9 @@ export function AssetDetail({
         onClose();
       }}
     >
+      <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <div
-        className="modal-box w-11/12 max-w-6xl h-[min(90vh,880px)] p-0 flex flex-col overflow-hidden glass-strong glass-appear !bg-[var(--glass-strong)] border-0 shadow-none"
+        className="modal-box w-11/12 max-w-6xl h-[min(90vh,880px)] p-0 flex flex-col overflow-hidden glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
         style={{ borderRadius: 22 }}
       >
         <div className="shrink-0 px-4 py-2.5 flex items-center gap-3">
@@ -692,7 +704,7 @@ export function AssetDetail({
                 onClick={() => void toggleFavorite()}
                 disabled={busy}
                 aria-label={favorited ? "Unstar" : "Star"}
-                className="dock-btn !px-2.5"
+                className={`dock-btn !px-2.5 ${favorited ? "pulse-confirm" : ""}`}
               >
                 {favorited ? (
                   <IconStarFilled size={16} className="text-[#ff9f0a]" />
@@ -738,13 +750,36 @@ export function AssetDetail({
         </div>
 
         <div className="relative flex flex-1 overflow-hidden min-h-0">
-          <div className="flex-1 flex items-center justify-center overflow-hidden bg-black/5 min-w-0 relative p-3">
-            <div className="h-full w-full flex items-center justify-center min-h-0 overflow-hidden">
+          <div
+            className={`flex-1 flex items-center justify-center overflow-hidden min-w-0 relative ${
+              isMediaStage || trashMode ? "preview-stage" : "p-3"
+            }`}
+          >
+            <div className="h-full w-full flex items-center justify-center min-h-0 overflow-hidden relative">
               {renderPreview()}
             </div>
+            {isMediaStage && canDownload && assetUrl && !trashMode ? (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+                <div className="preview-dock">
+                  <button
+                    type="button"
+                    aria-label="Download"
+                    onClick={() => {
+                      void queueAssetDownload(
+                        asset.file_id,
+                        asset.original_name || "download",
+                        { upsertJob, removeJob },
+                      );
+                    }}
+                  >
+                    <IconDownload size={16} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {error && (
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-                <p className="bg-base-100 border border-base-300 shadow text-xs text-error px-3 py-1.5 rounded-box">
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20">
+                <p className="glass-content type-caption text-[#ff3b30] px-3 py-1.5 shake-error">
                   {error}
                 </p>
               </div>
@@ -752,7 +787,7 @@ export function AssetDetail({
           </div>
 
           {sidePanelOpen ? (
-            <div className="absolute inset-0 z-10 sm:static sm:inset-auto sm:w-80 sm:shrink-0 glass !rounded-none sm:!rounded-none flex flex-col overflow-hidden border-0">
+            <div className="absolute inset-0 z-10 sm:static sm:inset-auto sm:w-80 sm:shrink-0 glass-content !rounded-none sm:!rounded-none flex flex-col overflow-hidden border-0">
               <div className="sm:hidden flex items-center justify-between px-4 pt-3 pb-1">
                 <p className="type-label">Details</p>
                 <button

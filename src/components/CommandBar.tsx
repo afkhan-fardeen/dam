@@ -215,7 +215,7 @@ export function CommandBar({
     >
       <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <div
-        className="modal-box max-w-lg p-0 glass-strong glass-appear !bg-[var(--glass-strong)] border-0 shadow-none"
+        className="modal-box max-w-lg p-0 glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
         style={{ borderRadius: 22 }}
       >
         <div className="flex items-center gap-2 px-4 py-3">
@@ -264,7 +264,7 @@ export function CommandBar({
                       <li key={item.id}>
                         <button
                           type="button"
-                          className={`card-row ${
+                          className={`menu-row ${
                             idx === active ? "!bg-white/55" : ""
                           }`}
                           onMouseEnter={() => setActive(idx)}
