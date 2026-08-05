@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   IconFile,
-  IconFolder,
   IconSearch,
   IconSettings,
   IconUpload,
@@ -23,8 +22,7 @@ type CommandBarProps = {
 type ResultItem =
   | { kind: "action"; id: string; label: string; run: () => void }
   | { kind: "entity"; id: string; entity: Entity }
-  | { kind: "document"; id: string; asset: Asset }
-  | { kind: "space"; id: string; space: Space };
+  | { kind: "document"; id: string; asset: Asset };
 
 const SEARCH_DEBOUNCE_MS = 180; // match DriveShell navbar live search
 
@@ -129,16 +127,7 @@ export function CommandBar({
     return list;
   }, [canUpload, isAdmin, onUpload, router]);
 
-  const spaceHits = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [] as Space[];
-    return spaces.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) || s.slug.toLowerCase().includes(q),
-    );
-  }, [query, spaces]);
-
-  /** Sections: Entities → Documents → Spaces → Actions (most-relevant-first). */
+  /** Sections: Entities → Documents → Actions (spaces omitted from user chrome). */
   const sections = useMemo(() => {
     const q = query.trim();
     if (!q) {
@@ -151,9 +140,6 @@ export function CommandBar({
     const docItems: ResultItem[] = documents
       .slice(0, 8)
       .map((a) => ({ kind: "document" as const, id: `d-${a.id}`, asset: a }));
-    const spaceItems: ResultItem[] = spaceHits
-      .slice(0, 4)
-      .map((s) => ({ kind: "space" as const, id: `s-${s.id}`, space: s }));
     const actionItems = actions.filter(
       (a) =>
         a.kind === "action" &&
@@ -163,10 +149,9 @@ export function CommandBar({
     return [
       { label: "Entities", items: entityItems },
       { label: "Documents", items: docItems },
-      { label: "Spaces", items: spaceItems },
       { label: "Actions", items: actionItems },
     ].filter((s) => s.items.length > 0);
-  }, [query, entities, documents, spaceHits, actions]);
+  }, [query, entities, documents, actions]);
 
   const flatItems = useMemo(
     () => sections.flatMap((s) => s.items),
@@ -182,9 +167,6 @@ export function CommandBar({
     else if (item.kind === "entity") {
       setOpen(false);
       router.push(`/e/${item.entity.id}`);
-    } else if (item.kind === "space") {
-      setOpen(false);
-      router.push(`/s/${item.space.slug}`);
     } else if (item.kind === "document") {
       setOpen(false);
       const space = spaces.find((s) => s.id === item.asset.space_id);
@@ -224,7 +206,7 @@ export function CommandBar({
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search documents, entities, spaces…"
+            placeholder="Search documents and entities…"
             className="glass-input flex-1 type-body"
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
@@ -249,7 +231,7 @@ export function CommandBar({
           {flatItems.length === 0 ? (
             <p className="px-4 py-6 type-body text-[var(--ink-soft)]">
               {query.trim()
-                ? "Nothing matched. Try another name, invoice number, or space."
+                ? "Nothing matched. Try another name or invoice number."
                 : "Type to search, or pick an action below."}
             </p>
           ) : (
@@ -307,19 +289,6 @@ export function CommandBar({
                               <span className="type-caption">
                                 {item.entity.entity_type?.label || "Entity"}
                               </span>
-                            </>
-                          ) : null}
-                          {item.kind === "space" ? (
-                            <>
-                              <IconFolder
-                                size={14}
-                                className="text-[var(--ink-faint)]"
-                              />
-                              <span
-                                className="h-1.5 w-1.5 rounded-full shrink-0"
-                                style={{ backgroundColor: item.space.color }}
-                              />
-                              <span>{item.space.name}</span>
                             </>
                           ) : null}
                           {item.kind === "document" ? (

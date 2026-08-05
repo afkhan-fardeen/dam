@@ -13,7 +13,7 @@ import { useFileServerHealth } from "@/lib/useFileServerHealth";
 export type TransferJob = {
   id: string;
   name: string;
-  progress: number; // 0–100
+  progress: number;
   kind: "upload" | "download";
   status: "uploading" | "downloading" | "saving" | "done" | "error";
   error?: string;
@@ -25,8 +25,14 @@ export type UploadJob = TransferJob;
 type DriveChromeContextValue = {
   uploadRequestId: number;
   folderRequestId: number;
+  /** Legacy bump — prefer openUpload for shell modal */
   requestUpload: () => void;
   requestNewFolder: () => void;
+  /** Shell-level upload modal */
+  uploadOpen: boolean;
+  uploadSpaceId: string | null;
+  openUpload: (spaceId?: string | null) => void;
+  closeUpload: () => void;
   serverOnline: boolean;
   jobs: TransferJob[];
   upsertJob: (job: TransferJob) => void;
@@ -38,12 +44,25 @@ const DriveChromeContext = createContext<DriveChromeContextValue | null>(null);
 export function DriveChromeProvider({ children }: { children: ReactNode }) {
   const [uploadRequestId, setUploadRequestId] = useState(0);
   const [folderRequestId, setFolderRequestId] = useState(0);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadSpaceId, setUploadSpaceId] = useState<string | null>(null);
   const [jobs, setJobs] = useState<TransferJob[]>([]);
   const health = useFileServerHealth();
 
-  const requestUpload = useCallback(() => {
+  const openUpload = useCallback((spaceId?: string | null) => {
+    if (spaceId) setUploadSpaceId(spaceId);
+    setUploadOpen(true);
     setUploadRequestId((n) => n + 1);
   }, []);
+
+  const closeUpload = useCallback(() => {
+    setUploadOpen(false);
+    setUploadSpaceId(null);
+  }, []);
+
+  const requestUpload = useCallback(() => {
+    openUpload();
+  }, [openUpload]);
 
   const requestNewFolder = useCallback(() => {
     setFolderRequestId((n) => n + 1);
@@ -69,6 +88,10 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       folderRequestId,
       requestUpload,
       requestNewFolder,
+      uploadOpen,
+      uploadSpaceId,
+      openUpload,
+      closeUpload,
       serverOnline: health === "connected",
       jobs,
       upsertJob,
@@ -79,6 +102,10 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       folderRequestId,
       requestUpload,
       requestNewFolder,
+      uploadOpen,
+      uploadSpaceId,
+      openUpload,
+      closeUpload,
       health,
       jobs,
       upsertJob,

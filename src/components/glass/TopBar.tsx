@@ -6,6 +6,7 @@ import type { ServerStatus } from "@/lib/useFileServerHealth";
 
 type TopBarProps = {
   brandHref?: string;
+  /** Empty string / omit hides the brand link */
   brandLabel?: string;
   trailing?: ReactNode;
   more?: ReactNode;
@@ -33,7 +34,7 @@ function statusCopy(status: ServerStatus): { label: string; color: string } {
 
 export function TopBar({
   brandHref = "/",
-  brandLabel = "Assets",
+  brandLabel = "",
   trailing,
   more,
   serverStatus,
@@ -46,6 +47,7 @@ export function TopBar({
   }, []);
 
   const status = serverStatus ? statusCopy(serverStatus) : null;
+  const showBrand = Boolean(brandLabel?.trim());
 
   return (
     <header
@@ -53,12 +55,16 @@ export function TopBar({
       style={{ viewTransitionName: "glass-topbar" }}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <Link
-          href={brandHref}
-          className="type-title truncate hover:opacity-80 transition-opacity"
-        >
-          {brandLabel}
-        </Link>
+        {showBrand ? (
+          <Link
+            href={brandHref}
+            className="type-title truncate hover:opacity-80 transition-opacity"
+          >
+            {brandLabel}
+          </Link>
+        ) : (
+          <span className="w-0" aria-hidden />
+        )}
         {more}
       </div>
       <div className="flex items-center gap-3 shrink-0">

@@ -10,7 +10,6 @@ import {
 } from "@/components/AssetCard";
 import { AssetDetail } from "@/components/AssetDetail";
 import { FilterChips } from "@/components/FilterChips";
-import { UploadForm } from "@/components/UploadForm";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { ROLE_LABELS, getTagChipStyles } from "@/lib/categories";
@@ -60,7 +59,7 @@ export function SpaceWorkspace({
 }: SpaceWorkspaceProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { uploadRequestId, folderRequestId, serverOnline, upsertJob, removeJob } =
+  const { folderRequestId, serverOnline, upsertJob, removeJob } =
     useDriveChrome();
 
   const editable = canEdit(role, isAdmin);
@@ -83,7 +82,6 @@ export function SpaceWorkspace({
     panel: boolean;
     move: boolean;
   }>({ panel: false, move: false });
-  const [showUpload, setShowUpload] = useState(false);
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [fadeKey, setFadeKey] = useState(0);
@@ -123,19 +121,8 @@ export function SpaceWorkspace({
   }, [folderFromUrl]);
 
   useEffect(() => {
-    if (uploadRequestId > 0 && editable && view !== "trash") {
-      setShowUpload(true);
-    }
-  }, [uploadRequestId, editable, view]);
-
-  useEffect(() => {
     if (folderRequestId > 0 && editable) setShowNewFolder(true);
   }, [folderRequestId, editable]);
-
-  useEffect(() => {
-    if (view === "trash") setShowUpload(false);
-  }, [view]);
-
   useEffect(() => {
     if (!showNewFolder) return;
     const t = window.setTimeout(() => newFolderInputRef.current?.focus(), 50);
@@ -1145,20 +1132,6 @@ export function SpaceWorkspace({
         </dialog>
       ) : null}
 
-      {showUpload && editable && view !== "trash" ? (
-        <UploadForm
-          spaceId={space.id}
-          folderId={folderId}
-          defaultCreatedBy={profileName}
-          onCancel={() => setShowUpload(false)}
-          onUploaded={() => {
-            setShowUpload(false);
-            void loadAssets();
-            void reloadTagOptions();
-          }}
-        />
-      ) : null}
-
       {error ? (
         <p className="type-caption text-error">{error}</p>
       ) : null}
@@ -1414,7 +1387,7 @@ export function SpaceWorkspace({
               {view === "trash"
                 ? "Trash is empty."
                 : editable
-                  ? "Nothing here yet. Drop files here or use New → Upload."
+                  ? "Nothing here yet. Drop files here or use Upload in the dock."
                   : "Nothing here yet."}
             </p>
           ) : (

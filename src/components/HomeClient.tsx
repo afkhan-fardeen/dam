@@ -22,7 +22,7 @@ export function HomeClient({
   const view = searchParams.get("view") || "all";
 
   if (view === "all") {
-    return <HomeGlass spaces={spaces} profileName={profileName} />;
+    return <HomeGlass profileName={profileName} />;
   }
 
   return (

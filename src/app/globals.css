@@ -234,14 +234,14 @@ body {
   }
   to {
     opacity: 0;
-    transform: scale(0.98);
+    transform: scale(0.985);
   }
 }
 
 @keyframes route-in {
   from {
     opacity: 0;
-    transform: scale(0.98);
+    transform: scale(0.985);
   }
   to {
     opacity: 1;
@@ -312,11 +312,11 @@ body {
 }
 
 ::view-transition-old(glass-content) {
-  animation: route-out 0.18s ease-in both;
+  animation: route-out 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 ::view-transition-new(glass-content) {
-  animation: route-in 0.22s ease-out both;
+  animation: route-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: 40ms;
 }
 
@@ -328,6 +328,47 @@ body {
 ::view-transition-new(glass-dock) {
   animation: none;
   opacity: 1;
+}
+
+::view-transition-group(search-hero) {
+  animation-duration: 0.32s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+::view-transition-old(search-hero),
+::view-transition-new(search-hero) {
+  height: 100%;
+  width: 100%;
+  object-fit: none;
+  overflow: clip;
+}
+
+@keyframes search-result-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.search-results-stagger > * {
+  animation: search-result-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.search-results-stagger > *:nth-child(1) {
+  animation-delay: 40ms;
+}
+.search-results-stagger > *:nth-child(2) {
+  animation-delay: 90ms;
+}
+.search-results-stagger > *:nth-child(3) {
+  animation-delay: 140ms;
+}
+.search-results-stagger > *:nth-child(4) {
+  animation-delay: 190ms;
 }
 
 @keyframes search-glow-pulse {
@@ -709,6 +750,10 @@ body {
 
   .pulse-confirm,
   .shake-error {
+    animation: none;
+  }
+
+  .search-results-stagger > * {
     animation: none;
   }
 

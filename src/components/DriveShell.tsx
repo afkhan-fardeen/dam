@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   IconClock,
-  IconDots,
   IconFolder,
   IconKey,
   IconLock,
@@ -16,6 +15,7 @@ import {
   IconUpload,
   IconUser,
 } from "@tabler/icons-react";
+import { UploadForm } from "@/components/UploadForm";
 import { createClient } from "@/lib/supabase/client";
 import {
   canEdit,
@@ -55,7 +55,7 @@ export function DriveShell({
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { requestUpload, requestNewFolder, serverOnline } = useDriveChrome();
+  const { openUpload, closeUpload, uploadOpen, uploadSpaceId, requestNewFolder, serverOnline } = useDriveChrome();
   const health = useFileServerHealth();
 
   const activeSlug = pathname.startsWith("/s/")
@@ -76,6 +76,18 @@ export function DriveShell({
   const onEntity = pathname.startsWith("/e/");
   const online = health === "connected" && serverOnline;
   const showHomeHero = onHome && view === "all";
+
+  const defaultUploadSpaceId = useMemo(() => {
+    if (activeSpace && canEdit(role, profile.is_admin)) return activeSpace.id;
+    for (const s of spaces) {
+      const r = roleForSpace(memberships, s.id, profile.is_admin);
+      if (canEdit(r, profile.is_admin)) return s.id;
+    }
+    return profile.is_admin && spaces[0] ? spaces[0].id : null;
+  }, [activeSpace, role, spaces, memberships, profile.is_admin]);
+
+  const canShellUpload = Boolean(defaultUploadSpaceId) && online && view !== "trash";
+
 
   const showTrash =
     profile.is_admin || memberships.some((m) => m.role === "editor");
@@ -161,9 +173,7 @@ export function DriveShell({
       .join("");
   }, [profile]);
 
-  const uploadDisabled = !online || view === "trash";
-  const canUploadHere =
-    editable && (Boolean(activeSlug) || onHome || onSearch) && !uploadDisabled;
+  const shellUploadSpaceId = uploadSpaceId || defaultUploadSpaceId;
 
   const dockItems: DockItem[] = useMemo(() => {
     if (onAdmin) {
@@ -182,6 +192,12 @@ export function DriveShell({
       }));
     }
 
+    const uploadTitle = !online
+      ? "PC offline"
+      : !defaultUploadSpaceId
+        ? "No place to upload — ask an admin"
+        : undefined;
+
     if (onSearch) {
       return [
         {
@@ -189,15 +205,9 @@ export function DriveShell({
           label: "Upload",
           icon: <IconUpload size={15} stroke={1.75} />,
           primary: true,
-          disabled: !canUploadHere,
-          onClick: () => {
-            if (!activeSlug && spaces[0]) {
-              navigateWithTransition(router, `/s/${spaces[0].slug}`);
-              window.setTimeout(() => requestUpload(), 100);
-            } else {
-              requestUpload();
-            }
-          },
+          disabled: !canShellUpload,
+          title: uploadTitle,
+          onClick: () => openUpload(defaultUploadSpaceId),
         },
         {
           id: "new-search",
@@ -206,12 +216,6 @@ export function DriveShell({
             setQuery("");
             navigateWithTransition(router, "/");
           },
-        },
-        {
-          id: "spaces",
-          label: "Spaces",
-          icon: <IconFolder size={15} stroke={1.75} />,
-          href: spaces[0] ? `/s/${spaces[0].slug}` : "/",
         },
       ];
     }
@@ -223,8 +227,9 @@ export function DriveShell({
           label: "Upload",
           icon: <IconUpload size={15} stroke={1.75} />,
           primary: true,
-          disabled: uploadDisabled || !editable,
-          onClick: () => requestUpload(),
+          disabled: !canShellUpload || !editable,
+          title: uploadTitle,
+          onClick: () => openUpload(activeSpace?.id ?? defaultUploadSpaceId),
         },
         {
           id: "folder",
@@ -244,7 +249,7 @@ export function DriveShell({
           id: "trash",
           label: "Trash",
           icon: <IconTrash size={15} stroke={1.75} />,
-          href: `/?view=trash`,
+          href: "/?view=trash",
           active: view === "trash",
         });
       }
@@ -261,21 +266,16 @@ export function DriveShell({
       return items;
     }
 
-    // Home / list views
-    const homeItems: DockItem[] = [
+    // Home / list views — no Spaces
+    return [
       {
         id: "upload",
         label: "Upload",
         icon: <IconUpload size={15} stroke={1.75} />,
         primary: true,
-        disabled: uploadDisabled,
-        onClick: () => {
-          if (spaces[0]) {
-            navigateWithTransition(router, `/s/${spaces[0].slug}`);
-            window.setTimeout(() => requestUpload(), 150);
-          }
-        },
-        title: spaces[0] ? undefined : "No space to upload into",
+        disabled: !canShellUpload,
+        title: uploadTitle,
+        onClick: () => openUpload(defaultUploadSpaceId),
       },
       {
         id: "favorites",
@@ -292,12 +292,6 @@ export function DriveShell({
         active: view === "recent",
       },
       {
-        id: "spaces",
-        label: "Spaces",
-        icon: <IconFolder size={15} stroke={1.75} />,
-        href: spaces[0] ? `/s/${spaces[0].slug}` : "/",
-      },
-      {
         id: "settings",
         icon: <IconSettings size={15} stroke={1.75} />,
         title: "Settings",
@@ -308,70 +302,26 @@ export function DriveShell({
         },
       },
     ];
-    return homeItems;
   }, [
     onAdmin,
     onSearch,
     activeSlug,
+    activeSpace,
     pathname,
-    canUploadHere,
-    uploadDisabled,
+    canShellUpload,
     editable,
-    spaces,
+    defaultUploadSpaceId,
+    online,
     showTrash,
     view,
     router,
-    requestUpload,
+    openUpload,
     requestNewFolder,
   ]);
 
   const avatarTrigger = (
     <span className="inline-flex items-center justify-center h-8 w-8 rounded-full glass text-[11px] font-semibold text-[var(--ink)]">
       {initials || <IconUser size={14} />}
-    </span>
-  );
-
-  const moreMenu = (
-    <span className="min-[1180px]:hidden">
-      <GlassDropdown
-        align="left"
-        widthClass="w-[260px]"
-        trigger={
-          <span className="dock-btn !py-1.5 !px-2.5 ml-1" title="More">
-            <IconDots size={16} stroke={1.75} />
-          </span>
-        }
-      >
-        <p className="card-label px-2.5 pt-1 pb-1">Spaces</p>
-        {spaces.length === 0 ? (
-          <p className="type-caption px-2.5 py-2">No spaces yet</p>
-        ) : (
-          spaces.map((space) => (
-            <Link key={space.id} href={`/s/${space.slug}`} className="menu-row">
-              <span
-                className="h-2 w-2 rounded-full shrink-0"
-                style={{ backgroundColor: space.color }}
-              />
-              <span className="truncate flex-1">{space.name}</span>
-              {space.requires_passcode ? (
-                <IconLock size={13} className="text-[var(--ink-faint)]" />
-              ) : null}
-            </Link>
-          ))
-        )}
-        <div className="card-divider" />
-        <Link href="/?view=favorites" className="menu-row">
-          <IconStar size={14} /> Favorites
-        </Link>
-        <Link href="/?view=recent" className="menu-row">
-          <IconClock size={14} /> Recent
-        </Link>
-        {showTrash ? (
-          <Link href="/?view=trash" className="menu-row">
-            <IconTrash size={14} /> Trash
-          </Link>
-        ) : null}
-      </GlassDropdown>
     </span>
   );
 
@@ -389,7 +339,7 @@ export function DriveShell({
       ) : null}
 
       <TopBar
-        more={showHomeHero || onHome ? moreMenu : undefined}
+        brandLabel=""
         serverStatus={health}
         trailing={
           <GlassDropdown trigger={avatarTrigger}>
@@ -427,7 +377,7 @@ export function DriveShell({
               value={query}
               onChange={setQuery}
               onSubmit={submitSearch}
-              placeholder="Search…"
+              placeholder="Search files and entities…"
               showCmdK={onSearch}
               glow={onSearch}
               slim
@@ -462,9 +412,23 @@ export function DriveShell({
       <CommandBar
         spaces={spaces}
         isAdmin={profile.is_admin}
-        canUpload={editable}
-        onUpload={() => requestUpload()}
+        canUpload={canShellUpload}
+        onUpload={() => openUpload(defaultUploadSpaceId)}
       />
+
+
+      {uploadOpen && shellUploadSpaceId ? (
+        <UploadForm
+          spaceId={shellUploadSpaceId}
+          folderId={activeSlug ? searchParams.get("folder") : null}
+          defaultCreatedBy={profile.full_name || profile.email || ""}
+          onCancel={() => closeUpload()}
+          onUploaded={() => {
+            closeUpload();
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {passwordOpen ? (
         <dialog

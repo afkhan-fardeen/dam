@@ -35,6 +35,7 @@ export function SearchHero({
         className={`search-hero relative glass-hero ${
           slim ? "px-4 py-2.5" : "px-5 py-[18px]"
         }`}
+        style={{ viewTransitionName: "search-hero" }}
       >
         {glow ? <span className="search-glow" aria-hidden /> : null}
         <label className="flex items-center gap-3 w-full">
