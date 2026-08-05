@@ -19,10 +19,13 @@ import {
   parseXlsxPreview,
   type PreviewTable,
 } from "@/lib/docPreview";
-import type { Asset, Folder, Tag } from "@/lib/types";
+import type { Asset, Entity, Folder, Tag } from "@/lib/types";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { queueAssetDownload } from "@/lib/download";
+import { EntityChip } from "@/components/EntityChip";
+import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
+import { AttributeEditor } from "@/components/AttributeEditor";
 
 type AssetDetailProps = {
   asset: Asset;
@@ -80,6 +83,10 @@ export function AssetDetail({
   const [tagDraft, setTagDraft] = useState("");
   const [removedTagIds, setRemovedTagIds] = useState<string[]>([]);
   const [addedTagNames, setAddedTagNames] = useState<string[]>([]);
+  const [linkedEntities, setLinkedEntities] = useState<
+    (Entity & { relation_label?: string | null })[]
+  >([]);
+  const [entityPickerOpen, setEntityPickerOpen] = useState(false);
 
   const [docTable, setDocTable] = useState<PreviewTable | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -122,6 +129,8 @@ export function AssetDetail({
     setTagDraft("");
     setRemovedTagIds([]);
     setAddedTagNames([]);
+    setLinkedEntities([]);
+    setEntityPickerOpen(false);
     setDocTable(null);
     setDocHtml(null);
     setDocError(null);
@@ -134,6 +143,28 @@ export function AssetDetail({
     asset.created_by,
     asset.tags,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/assets/${asset.id}/entities`);
+        const json = await res.json();
+        if (!cancelled && res.ok) {
+          setLinkedEntities(
+            (json.entities ?? []) as (Entity & {
+              relation_label?: string | null;
+            })[],
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [asset.id]);
 
   useEffect(() => {
     if (trashMode || !assetUrl || !docKind || docKind === "doc") return;
@@ -311,6 +342,53 @@ export function AssetDetail({
       setAddedTagNames((prev) =>
         prev.filter((n) => n.toLowerCase() !== tag.name.toLowerCase()),
       );
+    }
+  }
+
+  async function unlinkEntity(entityId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/assets/${asset.id}/entities/${entityId}`,
+        { method: "DELETE" },
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not unlink");
+      setLinkedEntities((prev) => prev.filter((e) => e.id !== entityId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not unlink");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onEntitiesPicked(next: PickedEntity[]) {
+    const existingIds = new Set(linkedEntities.map((e) => e.id));
+    const toAdd = next.filter((e) => !existingIds.has(e.id));
+    setEntityPickerOpen(false);
+    if (toAdd.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      for (const ent of toAdd) {
+        const res = await fetch(`/api/assets/${asset.id}/entities`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entity_id: ent.id }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || "Could not link");
+        if (json.entities) {
+          setLinkedEntities(
+            json.entities as (Entity & { relation_label?: string | null })[],
+          );
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not link");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -730,6 +808,54 @@ export function AssetDetail({
                   </p>
                 )}
               </section>
+
+              {/* Relations */}
+              <section>
+                <p className="type-micro opacity-50 mb-2">Relations</p>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {linkedEntities.length > 0 ? (
+                    linkedEntities.map((e) => (
+                      <EntityChip
+                        key={e.id}
+                        entity={e}
+                        href={`/e/${e.id}`}
+                        readOnly={!canEditDetails}
+                        onRemove={
+                          canEditDetails
+                            ? () => void unlinkEntity(e.id)
+                            : undefined
+                        }
+                      />
+                    ))
+                  ) : (
+                    <span className="type-body opacity-60">No relations</span>
+                  )}
+                </div>
+                {canEditDetails && !trashMode ? (
+                  entityPickerOpen ? (
+                    <EntityPicker
+                      selected={linkedEntities}
+                      onChange={(next) => void onEntitiesPicked(next)}
+                      disabled={busy}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs text-primary"
+                      onClick={() => setEntityPickerOpen(true)}
+                    >
+                      Add relation
+                    </button>
+                  )
+                ) : null}
+              </section>
+
+              {!trashMode ? (
+                <AttributeEditor
+                  assetId={asset.id}
+                  canEdit={canEditDetails}
+                />
+              ) : null}
 
               {/* Tags */}
               <section>

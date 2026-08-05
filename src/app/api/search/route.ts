@@ -11,6 +11,7 @@ import {
   listRecentAssets,
   listTrashAssets,
   searchAssets,
+  searchEntityHits,
 } from "@/lib/search";
 
 export const runtime = "nodejs";
@@ -30,6 +31,8 @@ export async function GET(request: Request) {
     const tag = searchParams.get("tag");
     const view = searchParams.get("view") ?? "all";
     const starred = searchParams.get("starred") === "1" || view === "starred";
+
+    const entityId = searchParams.get("entity");
 
     const { data: memberships } = await supabase
       .from("space_memberships")
@@ -98,6 +101,7 @@ export async function GET(request: Request) {
           q,
           spaceIds: allSpaceIds,
           tag,
+          entityId,
           userId: effectiveUserId,
         });
         const favorited = await attachFavorites(
@@ -105,8 +109,11 @@ export async function GET(request: Request) {
           effectiveUserId,
           assets,
         );
+        const entities = await searchEntityHits(supabase, q);
         return NextResponse.json({
           assets: favorited,
+          documents: favorited,
+          entities,
           count: favorited.length,
           view: "search",
           global: true,
@@ -219,11 +226,15 @@ export async function GET(request: Request) {
         q,
         spaceId,
         tag,
+        entityId,
         userId: effectiveUserId,
       });
       const favorited = await attachFavorites(supabase, effectiveUserId, assets);
+      const entities = await searchEntityHits(supabase, q);
       return NextResponse.json({
         assets: favorited,
+        documents: favorited,
+        entities,
         count: favorited.length,
         view: "search",
       });

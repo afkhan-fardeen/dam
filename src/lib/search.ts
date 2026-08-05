@@ -367,6 +367,7 @@ export async function searchAssets(
     spaceId?: string | null;
     spaceIds?: string[];
     tag?: string | null;
+    entityId?: string | null;
     userId?: string;
   },
 ): Promise<Asset[]> {
@@ -382,7 +383,7 @@ export async function searchAssets(
 
   if (spaceIds.length === 0) return [];
 
-  if (!q) {
+  if (!q && !options.entityId) {
     const assets = await listRecentAssets(supabase, {
       spaceIds,
       tag,
@@ -394,16 +395,78 @@ export async function searchAssets(
     return assets;
   }
 
-  const chunks = await Promise.all(
-    spaceIds.map((id) => searchOneSpace(supabase, q, id, tag)),
-  );
   const seen = new Set<string>();
   const merged: Asset[] = [];
-  for (const chunk of chunks) {
-    for (const asset of chunk) {
+
+  function pushAll(list: Asset[]) {
+    for (const asset of list) {
       if (seen.has(asset.id)) continue;
+      if (!spaceIds.includes(asset.space_id as string)) continue;
       seen.add(asset.id);
       merged.push(asset);
+    }
+  }
+
+  if (q) {
+    const chunks = await Promise.all(
+      spaceIds.map((id) => searchOneSpace(supabase, q, id, tag)),
+    );
+    for (const chunk of chunks) pushAll(chunk);
+
+    // Entity name / alias matches → linked assets (RLS filters visibility)
+    const { data: byEntity } = await supabase.rpc("search_asset_ids_by_entity", {
+      q,
+    });
+    const entityAssetIds = (byEntity ?? []).map(
+      (r: { asset_id: string }) => r.asset_id,
+    );
+
+    // Attribute value matches
+    const { data: byAttr } = await supabase.rpc("search_asset_ids_by_attribute", {
+      q,
+    });
+    const attrAssetIds = (byAttr ?? []).map(
+      (r: { asset_id: string }) => r.asset_id,
+    );
+
+    const extraIds = [
+      ...new Set([...entityAssetIds, ...attrAssetIds]),
+    ].filter((id) => !seen.has(id));
+
+    if (extraIds.length > 0) {
+      let query = supabase
+        .from("assets")
+        .select(ASSET_COLS)
+        .eq("status", "active")
+        .in("id", extraIds)
+        .in("space_id", spaceIds);
+      if (tag) {
+        const tagIds = await assetIdsForTag(supabase, tag);
+        if (tagIds.length === 0) {
+          /* skip */
+        } else {
+          query = query.in("id", extraIds.filter((id) => tagIds.includes(id)));
+        }
+      }
+      const { data: extra } = await query;
+      if (extra) pushAll(await attachTags(supabase, extra as Asset[]));
+    }
+  }
+
+  if (options.entityId) {
+    const { data: links } = await supabase
+      .from("asset_entities")
+      .select("asset_id")
+      .eq("entity_id", options.entityId);
+    const ids = (links ?? []).map((l) => l.asset_id as string);
+    if (ids.length > 0) {
+      const { data } = await supabase
+        .from("assets")
+        .select(ASSET_COLS)
+        .eq("status", "active")
+        .in("id", ids)
+        .in("space_id", spaceIds);
+      if (data) pushAll(await attachTags(supabase, data as Asset[]));
     }
   }
 
@@ -411,4 +474,40 @@ export async function searchAssets(
     return markLockedAssets(supabase, options.userId, merged);
   }
   return merged;
+}
+
+export async function searchEntityHits(
+  supabase: SupabaseClient,
+  q: string,
+  limit = 20,
+) {
+  const trimmed = q.trim();
+  if (!trimmed) return [];
+  const { data, error } = await supabase.rpc("search_entities_trgm", {
+    q: trimmed,
+    limit_n: limit,
+  });
+  if (error) throw error;
+
+  const rows = (data ?? []) as {
+    id: string;
+    type_id: string;
+    name: string;
+    aliases: string[];
+    description: string | null;
+    status: string;
+  }[];
+
+  if (rows.length === 0) return [];
+
+  const { data: types } = await supabase
+    .from("entity_types")
+    .select("id,name,label,is_system,created_at");
+  const typeMap = new Map((types ?? []).map((t) => [t.id, t]));
+
+  return rows.map((e) => ({
+    ...e,
+    aliases: e.aliases ?? [],
+    entity_type: typeMap.get(e.type_id) ?? null,
+  }));
 }

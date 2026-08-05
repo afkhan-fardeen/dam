@@ -109,6 +109,19 @@ export async function requireUser(request?: Request): Promise<AuthContext> {
     };
   }
 
+  // Deactivated accounts cannot keep a session (opaque to clients).
+  if (realProfile.is_active === false) {
+    await supabase.auth.signOut();
+    return {
+      supabase,
+      user: null,
+      profile: null,
+      realProfile: null,
+      effectiveUserId: null,
+      viewingAs: null,
+    };
+  }
+
   const resolved = await resolveViewAs(supabase, realProfile);
   return {
     supabase,

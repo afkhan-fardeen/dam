@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:schema": "node scripts/apply-schema.mjs",
+    "db:schema": "node scripts/migrate.mjs",
+    "db:schema:one": "node scripts/apply-schema.mjs",
+    "db:schema:status": "node scripts/migrate.mjs --status",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs"
   },
   "dependencies": {

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
- * Apply a migration SQL file using SUPABASE_DB_PASSWORD or DATABASE_URL.
- * Usage: node scripts/apply-schema.mjs [migration-file]
+ * Apply a single migration SQL file (manual / emergency use).
+ * Prefer: npm run db:schema  (scripts/migrate.mjs) which tracks applied files.
+ *
+ * Usage: node scripts/apply-schema.mjs <migration-file>
  */
 import { Client } from "pg";
 import fs from "fs";
@@ -16,14 +18,20 @@ function loadEnvLocal() {
   for (const line of fs.readFileSync(envPath, "utf8").split("\n")) {
     const m = line.match(/^([^#=\s]+)\s*=\s*(.*)$/);
     if (m && !process.env[m[1]]) {
-      process.env[m[1]] = m[2];
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
     }
   }
 }
 
 async function main() {
   loadEnvLocal();
-  const fileArg = process.argv[2] || "002_auth_brands_folders.sql";
+  const fileArg = process.argv[2];
+  if (!fileArg) {
+    console.error(
+      "Usage: node scripts/apply-schema.mjs <migration-file>\nPrefer: npm run db:schema",
+    );
+    process.exit(1);
+  }
   const sqlPath = path.isAbsolute(fileArg)
     ? fileArg
     : path.join(__dirname, "..", "supabase", "migrations", fileArg);
@@ -53,7 +61,8 @@ async function main() {
 
   await client.connect();
   await client.query(sql);
-  console.log("Applied:", path.basename(sqlPath));
+  console.log("Applied (untracked):", path.basename(sqlPath));
+  console.log("Tip: use npm run db:schema so schema_migrations is updated.");
   await client.end();
 }
 

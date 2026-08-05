@@ -5,6 +5,10 @@ import { IconX } from "@tabler/icons-react";
 import { uploadFileWithProgress } from "@/lib/upload";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { getTagChipStyles } from "@/lib/categories";
+import {
+  EntityPicker,
+  type PickedEntity,
+} from "@/components/EntityPicker";
 
 type UploadFormProps = {
   spaceId: string;
@@ -27,6 +31,7 @@ export function UploadForm({
   const [file, setFile] = useState<File | null>(initialFile);
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
+  const [entities, setEntities] = useState<PickedEntity[]>([]);
   const [description, setDescription] = useState("");
   const [createdBy, setCreatedBy] = useState(defaultCreatedBy);
   const [busy, setBusy] = useState(false);
@@ -95,6 +100,19 @@ export function UploadForm({
         status: "done",
       });
       window.setTimeout(() => removeJob(jobId), 1800);
+
+      if (asset?.id && entities.length > 0) {
+        await Promise.all(
+          entities.map((ent) =>
+            fetch(`/api/assets/${asset.id}/entities`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ entity_id: ent.id }),
+            }).catch(() => null),
+          ),
+        );
+      }
+
       onUploaded(asset?.id ? [asset.id] : undefined);
     } catch (err) {
       const message =
@@ -215,6 +233,12 @@ export function UploadForm({
               </button>
             </div>
           </div>
+
+          <EntityPicker
+            selected={entities}
+            onChange={setEntities}
+            disabled={busy}
+          />
 
           <label className="flex flex-col gap-1">
             <span className="type-caption opacity-60">Description</span>

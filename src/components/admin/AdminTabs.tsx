@@ -7,6 +7,8 @@ import {
   IconUsers,
   IconTags,
   IconActivity,
+  IconAffiliate,
+  IconListDetails,
 } from "@tabler/icons-react";
 
 const TABS = [
@@ -24,6 +26,16 @@ const TABS = [
     href: "/admin/tags",
     label: "Tags",
     icon: IconTags,
+  },
+  {
+    href: "/admin/entities",
+    label: "Entities",
+    icon: IconAffiliate,
+  },
+  {
+    href: "/admin/attributes",
+    label: "Attributes",
+    icon: IconListDetails,
   },
   {
     href: "/admin/activity",

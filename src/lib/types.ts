@@ -90,6 +90,61 @@ export type ActivityLog = {
   summary?: string;
 };
 
+export type EntityType = {
+  id: string;
+  name: string;
+  label: string;
+  is_system: boolean;
+  created_at: string | null;
+};
+
+export type Entity = {
+  id: string;
+  type_id: string;
+  name: string;
+  aliases: string[];
+  description: string | null;
+  status: string;
+  merged_into_id: string | null;
+  roles: string[];
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  entity_type?: EntityType | null;
+  document_count?: number;
+};
+
+export type AssetEntity = {
+  asset_id: string;
+  entity_id: string;
+  relation_label: string | null;
+  created_at: string | null;
+  entity?: Entity | null;
+};
+
+export type AttributeDef = {
+  id: string;
+  name: string;
+  label: string;
+  data_type: string;
+  dropdown_options: string[] | null;
+  applicable_space_kind: string | null;
+  searchable: boolean;
+  filterable: boolean;
+  status: string;
+  created_at: string | null;
+};
+
+export type AssetAttributeValue = {
+  asset_id: string;
+  attribute_def_id: string;
+  value_text: string | null;
+  value_number: number | null;
+  value_boolean: boolean | null;
+  value_date: string | null;
+  attribute_def?: AttributeDef | null;
+};
+
 export function canEdit(role: SpaceRole | null, isAdmin: boolean): boolean {
   return isAdmin || role === "editor";
 }

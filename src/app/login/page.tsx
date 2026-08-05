@@ -32,10 +32,11 @@ export default function LoginPage() {
     try {
       // Prefer browser client — sets auth cookies in the browser (works on Vercel HTTPS).
       const supabase = createClient();
-      const { error: signError } = await supabase.auth.signInWithPassword({
-        email: nextEmail,
-        password: nextPassword,
-      });
+      const { data: signData, error: signError } =
+        await supabase.auth.signInWithPassword({
+          email: nextEmail,
+          password: nextPassword,
+        });
 
       if (signError) {
         // Fallback: server route (helps some HTTP/LAN cases)
@@ -55,6 +56,19 @@ export default function LoginPage() {
               signError.message ||
               `Could not sign in (${res.status}).`,
           );
+          setBusy(false);
+          return;
+        }
+      } else if (signData.user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("is_active")
+          .eq("id", signData.user.id)
+          .maybeSingle();
+
+        if (profile && profile.is_active === false) {
+          await supabase.auth.signOut();
+          setError("Could not sign in. Check your email and password.");
           setBusy(false);
           return;
         }

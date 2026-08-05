@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: signData, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -91,6 +91,26 @@ export async function POST(request: NextRequest) {
         },
         { status: 401 },
       );
+    }
+
+    const userId = signData.user?.id;
+    if (userId) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_active")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (profile && profile.is_active === false) {
+        await supabase.auth.signOut();
+        return NextResponse.json(
+          {
+            error: "Could not sign in. Check your email and password.",
+            code: "invalid_credentials",
+          },
+          { status: 401 },
+        );
+      }
     }
 
     return success;

@@ -38,6 +38,7 @@ import {
   readSidebarCollapsed,
   writeSidebarCollapsed,
 } from "@/lib/uiPrefs";
+import { CommandBar } from "@/components/CommandBar";
 
 type DriveShellProps = {
   spaces: Space[];
@@ -564,6 +565,13 @@ export function DriveShell({
       </div>
 
       <UploadProgressPanel />
+
+      <CommandBar
+        spaces={spaces}
+        isAdmin={profile.is_admin}
+        canUpload={editable}
+        onUpload={() => requestUpload()}
+      />
 
       {passwordOpen ? (
         <dialog
