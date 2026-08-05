@@ -442,35 +442,38 @@ export function AllFilesClient({
             setRenameTarget(null);
           }}
         >
+          <div className="glass-scrim absolute inset-0 pointer-events-none" />
           <form
             onSubmit={confirmRename}
-            className="modal-box max-w-sm rounded-none"
+            onClick={(e) => e.stopPropagation()}
+            className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+            style={{ borderRadius: 22 }}
           >
             <h3 className="type-title mb-3">Rename file</h3>
             <input
               autoFocus
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
-              className="input input-bordered w-full"
+              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
             />
-            <div className="modal-action">
+            <div className="flex justify-end gap-2 mt-5">
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn-glass"
                 onClick={() => setRenameTarget(null)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="btn btn-primary"
+                className="btn-glass-primary"
                 disabled={confirmBusy || !renameValue.trim()}
               >
                 Save
               </button>
             </div>
           </form>
-          <form method="dialog" className="modal-backdrop">
+          <form method="dialog" className="modal-backdrop bg-transparent">
             <button type="button" onClick={() => setRenameTarget(null)}>
               close
             </button>

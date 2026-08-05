@@ -9,6 +9,7 @@ import {
   EntityPicker,
   type PickedEntity,
 } from "@/components/EntityPicker";
+import { GlassButton } from "@/components/glass/GlassButton";
 
 type UploadFormProps = {
   spaceId: string;
@@ -149,16 +150,19 @@ export function UploadForm({
         if (!busy) onCancel();
       }}
     >
+      <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="modal-box max-w-md rounded-none p-0 flex flex-col max-h-[min(90vh,560px)]"
+        onClick={(e) => e.stopPropagation()}
+        className="modal-box max-w-md p-0 flex flex-col max-h-[min(90vh,560px)] glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+        style={{ borderRadius: 22 }}
       >
-        <div className="shrink-0 flex items-center gap-2 px-4 pt-4 pb-2 border-b border-base-300">
+        <div className="shrink-0 flex items-center gap-2 px-5 pt-5 pb-2">
           <h3 className="type-title flex-1">Upload file</h3>
           <button
             type="button"
             aria-label="Close"
-            className="btn btn-ghost btn-sm btn-square"
+            className="dock-btn !px-2"
             disabled={busy}
             onClick={onCancel}
           >
@@ -166,25 +170,25 @@ export function UploadForm({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="type-caption opacity-60">File</span>
+        <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className="type-caption">File</span>
             <input
               ref={inputRef}
               type="file"
-              className="file-input file-input-bordered file-input-sm w-full type-body"
+              className="file-input file-input-bordered file-input-sm w-full type-body bg-white/70 border-[var(--line)]"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               autoFocus
             />
             {file ? (
-              <span className="type-caption text-success truncate">
+              <span className="type-caption text-[#34c759] truncate">
                 {file.name}
               </span>
             ) : null}
           </label>
 
-          <div className="flex flex-col gap-1">
-            <span className="type-caption opacity-60">Tags</span>
+          <div className="flex flex-col gap-1.5">
+            <span className="type-caption">Tags</span>
             {tags.length > 0 ? (
               <div className="flex flex-wrap gap-1">
                 {tags.map((t) => {
@@ -196,7 +200,7 @@ export function UploadForm({
                       onClick={() =>
                         setTags((prev) => prev.filter((x) => x !== t))
                       }
-                      className="badge badge-sm gap-1 font-normal"
+                      className="tag-chip gap-1"
                       style={chip.style}
                     >
                       {t}
@@ -220,17 +224,16 @@ export function UploadForm({
                   }
                 }}
                 placeholder="Type a tag, then Enter"
-                className="input input-bordered input-sm flex-1 type-body"
+                className="glass-input flex-1 type-body px-3 py-2 rounded-[12px] bg-white/55"
                 disabled={busy}
               />
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
+              <GlassButton
+                variant="glass"
                 disabled={busy || !tagDraft.trim()}
                 onClick={() => commitDraftTag()}
               >
                 Add
-              </button>
+              </GlassButton>
             </div>
           </div>
 
@@ -240,55 +243,45 @@ export function UploadForm({
             disabled={busy}
           />
 
-          <label className="flex flex-col gap-1">
-            <span className="type-caption opacity-60">Description</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="type-caption">Description</span>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="input input-bordered input-sm w-full type-body"
+              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
               disabled={busy}
             />
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="type-caption opacity-60">Credit</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="type-caption">Credit</span>
             <input
               value={createdBy}
               onChange={(e) => setCreatedBy(e.target.value)}
-              className="input input-bordered input-sm w-full type-body"
+              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
               disabled={busy}
             />
           </label>
 
           {error ? (
-            <p className="type-caption text-error alert alert-error py-2 px-3">
-              {error}
-            </p>
+            <p className="type-caption text-[#ff3b30]">{error}</p>
           ) : null}
         </div>
 
-        <div className="shrink-0 modal-action px-4 py-3 mt-0 border-t border-base-300">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={busy}
-            onClick={onCancel}
-          >
+        <div className="shrink-0 flex justify-end gap-2 px-5 py-4">
+          <GlassButton variant="glass" disabled={busy} onClick={onCancel}>
             Cancel
-          </button>
-          <button
+          </GlassButton>
+          <GlassButton
+            variant="primary"
             type="submit"
             disabled={busy || !serverOnline}
-            className="btn btn-primary btn-sm"
           >
-            {busy ? (
-              <span className="loading loading-spinner loading-xs" />
-            ) : null}
             {busy ? "Uploading…" : "Upload"}
-          </button>
+          </GlassButton>
         </div>
       </form>
-      <form method="dialog" className="modal-backdrop">
+      <form method="dialog" className="modal-backdrop bg-transparent">
         <button type="button" disabled={busy} onClick={onCancel}>
           close
         </button>

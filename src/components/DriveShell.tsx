@@ -449,7 +449,7 @@ export function DriveShell({
             setPasswordOpen(false);
           }}
         >
-          <div className="glass-scrim absolute inset-0" />
+          <div className="glass-scrim absolute inset-0 pointer-events-none" />
           <form
             method="dialog"
             onClick={(e) => e.stopPropagation()}

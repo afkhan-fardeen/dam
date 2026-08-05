@@ -123,7 +123,7 @@ export function EntityPicker({
 
       <div className="flex gap-1.5">
         <select
-          className="select select-bordered select-sm w-28 shrink-0"
+          className="select select-bordered select-sm w-28 shrink-0 bg-white/70 border-[var(--line)]"
           value={typeId}
           disabled={disabled}
           onChange={(e) => setTypeId(e.target.value)}
@@ -145,15 +145,18 @@ export function EntityPicker({
             }}
             onFocus={() => setOpen(true)}
             placeholder="Search or create"
-            className="input input-bordered input-sm w-full type-body"
+            className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
           />
           {open && (query.trim() || results.length > 0) ? (
-            <div className="absolute z-30 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-base-300 bg-base-100 shadow-md">
+            <div
+              className="absolute z-30 left-0 right-0 mt-1 max-h-48 overflow-y-auto glass-content !bg-[var(--content-glass)]"
+              style={{ borderRadius: 14 }}
+            >
               {results.map((e) => (
                 <button
                   key={e.id}
                   type="button"
-                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-base-200"
+                  className="card-row w-full text-left"
                   onClick={() => addEntity(e)}
                 >
                   <span
@@ -162,8 +165,8 @@ export function EntityPicker({
                       backgroundColor: entityTypeColor(e.entity_type?.name),
                     }}
                   />
-                  <span className="truncate">{e.name}</span>
-                  <span className="text-xs opacity-50 ml-auto">
+                  <span className="truncate flex-1">{e.name}</span>
+                  <span className="type-caption">
                     {e.entity_type?.label}
                   </span>
                 </button>
@@ -171,7 +174,7 @@ export function EntityPicker({
               {query.trim() ? (
                 <button
                   type="button"
-                  className="w-full px-3 py-2 text-left text-sm text-primary hover:bg-base-200 border-t border-base-300"
+                  className="card-row w-full text-left text-[var(--accent)] border-t border-[var(--line)]"
                   disabled={busy}
                   onClick={() => void createNew(false)}
                 >

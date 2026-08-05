@@ -1065,19 +1065,22 @@ export function SpaceWorkspace({
             setNewFolderName("");
           }}
         >
+          <div className="glass-scrim absolute inset-0 pointer-events-none" />
           <form
-            className="modal-box max-w-sm rounded-none p-0"
+            className="modal-box max-w-sm p-0 glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+            style={{ borderRadius: 22 }}
+            onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => {
               e.preventDefault();
               void createFolder();
             }}
           >
-            <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-base-300">
+            <div className="flex items-center gap-2 px-5 pt-5 pb-2">
               <h3 className="type-title flex-1">New folder</h3>
               <button
                 type="button"
                 aria-label="Close"
-                className="btn btn-ghost btn-sm btn-square"
+                className="dock-btn !px-2"
                 onClick={() => {
                   setShowNewFolder(false);
                   setNewFolderName("");
@@ -1086,22 +1089,22 @@ export function SpaceWorkspace({
                 <IconX size={16} />
               </button>
             </div>
-            <div className="px-4 py-3">
-              <label className="flex flex-col gap-1">
-                <span className="type-caption opacity-60">Name</span>
+            <div className="px-5 py-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="type-caption">Name</span>
                 <input
                   ref={newFolderInputRef}
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
                   placeholder="Folder name"
-                  className="input input-bordered input-sm w-full type-body"
+                  className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
                 />
               </label>
             </div>
-            <div className="modal-action px-4 py-3 mt-0 border-t border-base-300">
+            <div className="flex justify-end gap-2 px-5 py-4">
               <button
                 type="button"
-                className="btn btn-ghost btn-sm"
+                className="btn-glass"
                 onClick={() => {
                   setShowNewFolder(false);
                   setNewFolderName("");
@@ -1111,14 +1114,14 @@ export function SpaceWorkspace({
               </button>
               <button
                 type="submit"
-                className="btn btn-primary btn-sm"
+                className="btn-glass-primary"
                 disabled={!newFolderName.trim()}
               >
                 Create
               </button>
             </div>
           </form>
-          <form method="dialog" className="modal-backdrop">
+          <form method="dialog" className="modal-backdrop bg-transparent">
             <button
               type="button"
               onClick={() => {
@@ -1805,35 +1808,38 @@ export function SpaceWorkspace({
             setRenameAssetTarget(null);
           }}
         >
+          <div className="glass-scrim absolute inset-0 pointer-events-none" />
           <form
             onSubmit={confirmRenameAsset}
-            className="modal-box max-w-sm rounded-none"
+            onClick={(e) => e.stopPropagation()}
+            className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+            style={{ borderRadius: 22 }}
           >
             <h3 className="type-title mb-3">Rename file</h3>
             <input
               autoFocus
               value={renameAssetValue}
               onChange={(e) => setRenameAssetValue(e.target.value)}
-              className="input input-bordered w-full"
+              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
             />
-            <div className="modal-action">
+            <div className="flex justify-end gap-2 mt-5">
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn-glass"
                 onClick={() => setRenameAssetTarget(null)}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="btn btn-primary"
+                className="btn-glass-primary"
                 disabled={modalBusy || !renameAssetValue.trim()}
               >
                 Save
               </button>
             </div>
           </form>
-          <form method="dialog" className="modal-backdrop">
+          <form method="dialog" className="modal-backdrop bg-transparent">
             <button type="button" onClick={() => setRenameAssetTarget(null)}>
               close
             </button>
@@ -1866,9 +1872,18 @@ function ModalShell({
   children: React.ReactNode;
 }) {
   return (
-    <dialog className="modal modal-open" onClick={onClose}>
+    <dialog
+      className="modal modal-open"
+      onClick={onClose}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+    >
+      <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <div
-        className="modal-box max-w-sm rounded-none"
+        className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+        style={{ borderRadius: 22 }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 mb-3">
@@ -1876,7 +1891,7 @@ function ModalShell({
           <button
             type="button"
             aria-label="Close"
-            className="btn btn-ghost btn-sm btn-circle"
+            className="dock-btn !px-2"
             onClick={onClose}
           >
             <IconX size={16} />
@@ -1884,7 +1899,7 @@ function ModalShell({
         </div>
         {children}
       </div>
-      <form method="dialog" className="modal-backdrop">
+      <form method="dialog" className="modal-backdrop bg-transparent">
         <button type="button" onClick={onClose}>
           close
         </button>

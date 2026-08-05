@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { IconX } from "@tabler/icons-react";
 import type { Folder } from "@/lib/types";
+import { GlassButton } from "@/components/glass/GlassButton";
 
 type MoveAssetModalProps = {
   assetName: string;
@@ -75,22 +76,25 @@ export function MoveAssetModal({
         onClose();
       }}
     >
+      <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="modal-box max-w-sm rounded-none"
+        onClick={(e) => e.stopPropagation()}
+        className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+        style={{ borderRadius: 22 }}
       >
         <div className="flex items-start gap-2 mb-3">
           <h3 className="type-title flex-1">Move file</h3>
           <button
             type="button"
             aria-label="Close"
-            className="btn btn-ghost btn-sm btn-square"
+            className="dock-btn !px-2"
             onClick={onClose}
           >
             <IconX size={16} />
           </button>
         </div>
-        <p className="type-caption opacity-60 mb-3 truncate" title={assetName}>
+        <p className="type-caption mb-3 truncate" title={assetName}>
           {assetName}
         </p>
         {loading ? (
@@ -101,7 +105,7 @@ export function MoveAssetModal({
           <select
             value={folderId ?? ""}
             onChange={(e) => setFolderId(e.target.value || null)}
-            className="select select-bordered select-sm w-full type-body"
+            className="select select-bordered select-sm w-full type-body bg-white/70 border-[var(--line)]"
             autoFocus
           >
             <option value="">Space root</option>
@@ -112,26 +116,23 @@ export function MoveAssetModal({
             ))}
           </select>
         )}
-        {error ? <p className="type-caption text-error mt-2">{error}</p> : null}
-        <div className="modal-action">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={busy}
-            onClick={onClose}
-          >
+        {error ? (
+          <p className="type-caption text-[#ff3b30] mt-2">{error}</p>
+        ) : null}
+        <div className="flex justify-end gap-2 mt-5">
+          <GlassButton variant="glass" disabled={busy} onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </GlassButton>
+          <GlassButton
+            variant="primary"
             type="submit"
-            className="btn btn-primary btn-sm"
             disabled={busy || loading}
           >
             {busy ? "Moving…" : "Move"}
-          </button>
+          </GlassButton>
         </div>
       </form>
-      <form method="dialog" className="modal-backdrop">
+      <form method="dialog" className="modal-backdrop bg-transparent">
         <button type="button" onClick={onClose}>
           close
         </button>
