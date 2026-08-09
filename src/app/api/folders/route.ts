@@ -2,11 +2,48 @@ import { NextResponse } from "next/server";
 import { requireUser, logActivity, roleForSpace } from "@/lib/auth";
 import { canEdit } from "@/lib/types";
 import { hashPasscode } from "@/lib/passcode";
+import {
+  recomputeSubtreeInheritance,
+  setFolderTags,
+} from "@/lib/folderInheritance";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
 const FOLDER_PUBLIC_COLS =
-  "id,space_id,parent_folder_id,name,passcode_enabled,created_by,created_at";
+  "id,space_id,parent_folder_id,name,passcode_enabled,description,notes,brand,created_by,created_at";
+
+async function attachFolderTags(
+  supabase: Awaited<ReturnType<typeof requireUser>>["supabase"],
+  folders: { id: string }[],
+) {
+  if (folders.length === 0) return folders;
+  const ids = folders.map((f) => f.id);
+  const { data: links } = await supabase
+    .from("folder_tags")
+    .select("folder_id,tag_id")
+    .in("folder_id", ids);
+  if (!links?.length) {
+    return folders.map((f) => ({ ...f, tags: [] as { id: string; name: string }[] }));
+  }
+  const tagIds = [...new Set(links.map((l) => l.tag_id as string))];
+  const { data: tags } = await supabase
+    .from("tags")
+    .select("id,name")
+    .in("id", tagIds);
+  const byId = new Map(
+    (tags ?? []).map((t) => [t.id as string, { id: t.id as string, name: t.name as string }]),
+  );
+  const map = new Map<string, { id: string; name: string }[]>();
+  for (const link of links) {
+    const tag = byId.get(link.tag_id as string);
+    if (!tag) continue;
+    const list = map.get(link.folder_id as string) ?? [];
+    list.push(tag);
+    map.set(link.folder_id as string, list);
+  }
+  return folders.map((f) => ({ ...f, tags: map.get(f.id) ?? [] }));
+}
 
 export async function GET(request: Request) {
   const { user, supabase } = await requireUser(request);
@@ -26,10 +63,30 @@ export async function GET(request: Request) {
     .order("name");
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Pre-014 fallback without metadata columns
+    const { data: fallback, error: err2 } = await supabase
+      .from("folders")
+      .select(
+        "id,space_id,parent_folder_id,name,passcode_enabled,created_by,created_at",
+      )
+      .eq("space_id", spaceId)
+      .order("name");
+    if (err2) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({
+      folders: (fallback ?? []).map((f) => ({ ...f, tags: [] })),
+    });
   }
 
-  return NextResponse.json({ folders: data ?? [] });
+  try {
+    const withTags = await attachFolderTags(supabase, data ?? []);
+    return NextResponse.json({ folders: withTags });
+  } catch {
+    return NextResponse.json({
+      folders: (data ?? []).map((f) => ({ ...f, tags: [] })),
+    });
+  }
 }
 
 export async function POST(request: Request) {
@@ -101,6 +158,10 @@ export async function PATCH(request: Request) {
     parent_folder_id?: string | null;
     passcode?: string | null;
     passcode_enabled?: boolean;
+    description?: string | null;
+    notes?: string | null;
+    brand?: string | null;
+    tags?: string[];
   };
 
   if (!body.id) {
@@ -129,6 +190,15 @@ export async function PATCH(request: Request) {
 
   const updates: Record<string, unknown> = {};
   if (body.name?.trim()) updates.name = body.name.trim();
+  if (body.description !== undefined) {
+    updates.description = body.description?.trim() || null;
+  }
+  if (body.notes !== undefined) {
+    updates.notes = body.notes?.trim() || null;
+  }
+  if (body.brand !== undefined) {
+    updates.brand = body.brand?.trim() || null;
+  }
   if (body.parent_folder_id !== undefined) {
     if (body.parent_folder_id === body.id) {
       return NextResponse.json(
@@ -172,19 +242,65 @@ export async function PATCH(request: Request) {
     }
   }
 
-  if (Object.keys(updates).length === 0) {
+  const metaOnly =
+    Array.isArray(body.tags) ||
+    body.description !== undefined ||
+    body.notes !== undefined ||
+    body.brand !== undefined;
+
+  if (Object.keys(updates).length === 0 && !Array.isArray(body.tags)) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
 
-  const { data, error } = await supabase
-    .from("folders")
-    .update(updates)
-    .eq("id", body.id)
-    .select(FOLDER_PUBLIC_COLS)
-    .single();
+  let data = folder as Record<string, unknown>;
+  if (Object.keys(updates).length > 0) {
+    const { data: updated, error } = await supabase
+      .from("folders")
+      .update(updates)
+      .eq("id", body.id)
+      .select(FOLDER_PUBLIC_COLS)
+      .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    data = updated;
+  } else {
+    const { data: current } = await supabase
+      .from("folders")
+      .select(FOLDER_PUBLIC_COLS)
+      .eq("id", body.id)
+      .single();
+    if (current) data = current;
+  }
+
+  if (Array.isArray(body.tags)) {
+    try {
+      await setFolderTags(getSupabaseAdmin(), body.id, body.tags.map(String));
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not save folder tags";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  if (metaOnly || body.brand !== undefined || Array.isArray(body.tags)) {
+    const { data: space } = await supabase
+      .from("spaces")
+      .select("kind,name")
+      .eq("id", folder.space_id)
+      .maybeSingle();
+    try {
+      await recomputeSubtreeInheritance(
+        getSupabaseAdmin(),
+        folder.space_id,
+        body.id,
+        space?.kind,
+        space?.name,
+      );
+    } catch {
+      /* inheritance best-effort */
+    }
   }
 
   const action =
@@ -192,7 +308,9 @@ export async function PATCH(request: Request) {
       ? "folder_passcode"
       : body.parent_folder_id !== undefined
         ? "move_folder"
-        : "rename_folder";
+        : metaOnly
+          ? "folder_metadata"
+          : "rename_folder";
 
   await logActivity(
     {
@@ -206,12 +324,16 @@ export async function PATCH(request: Request) {
         previous_name: folder.name,
         passcode_enabled: data.passcode_enabled,
         parent_folder_id: data.parent_folder_id,
+        brand: data.brand,
       },
     },
     supabase,
   );
 
-  return NextResponse.json({ folder: data });
+  const [withTags] = await attachFolderTags(supabase, [
+    data as { id: string },
+  ]);
+  return NextResponse.json({ folder: withTags });
 }
 
 export async function DELETE(request: Request) {

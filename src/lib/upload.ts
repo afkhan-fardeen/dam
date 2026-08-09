@@ -6,6 +6,7 @@ export type UploadFileOptions = {
   folderId: string | null;
   tags?: string[];
   description?: string | null;
+  brand?: string | null;
   createdBy?: string | null;
   onProgress?: (pct: number) => void;
 };
@@ -99,6 +100,7 @@ export async function uploadFileWithProgress(
       space_id: options.spaceId,
       folder_id: options.folderId,
       description: options.description?.trim() || null,
+      brand: options.brand?.trim() || null,
       created_by: options.createdBy?.trim() || null,
       has_thumbnail: hasThumbnail,
       tags: options.tags ?? [],

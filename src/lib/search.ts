@@ -1,6 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Asset, Tag } from "@/lib/types";
+import type { Asset, Folder, Tag } from "@/lib/types";
 import { getBlockedFolderIds } from "@/lib/folderAccess";
+
+export type FolderSearchHit = Folder & {
+  space_name?: string | null;
+  space_slug?: string | null;
+  space_color?: string | null;
+};
 
 function emptyToNull(value: string | null | undefined): string | null {
   if (!value || value.trim() === "") return null;
@@ -510,4 +516,53 @@ export async function searchEntityHits(
     aliases: e.aliases ?? [],
     entity_type: typeMap.get(e.type_id) ?? null,
   }));
+}
+
+/** Folder name matches within accessible spaces (permission via RLS + spaceIds). */
+export async function searchFolderHits(
+  supabase: SupabaseClient,
+  options: { q: string; spaceIds: string[]; limit?: number },
+): Promise<FolderSearchHit[]> {
+  const trimmed = options.q.trim();
+  if (!trimmed || options.spaceIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("folders")
+    .select(
+      "id,space_id,parent_folder_id,name,passcode_enabled,created_by,created_at",
+    )
+    .in("space_id", options.spaceIds)
+    .ilike("name", `%${trimmed}%`)
+    .order("name")
+    .limit(options.limit ?? 24);
+
+  if (error) throw error;
+  const rows = (data ?? []) as Folder[];
+  if (rows.length === 0) return [];
+
+  const spaceIds = [...new Set(rows.map((r) => r.space_id))];
+  const { data: spaces } = await supabase
+    .from("spaces")
+    .select("id,name,slug,color")
+    .in("id", spaceIds);
+  const spaceMap = new Map(
+    (spaces ?? []).map((s) => [
+      s.id as string,
+      {
+        name: s.name as string,
+        slug: s.slug as string,
+        color: s.color as string,
+      },
+    ]),
+  );
+
+  return rows.map((row) => {
+    const sp = spaceMap.get(row.space_id);
+    return {
+      ...row,
+      space_name: sp?.name ?? null,
+      space_slug: sp?.slug ?? null,
+      space_color: sp?.color ?? null,
+    };
+  });
 }

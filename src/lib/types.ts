@@ -29,20 +29,24 @@ export type SpaceMembership = {
   created_at: string | null;
 };
 
+export type Tag = {
+  id: string;
+  name: string;
+  created_at?: string | null;
+};
+
 export type Folder = {
   id: string;
   space_id: string;
   parent_folder_id: string | null;
   name: string;
   passcode_enabled?: boolean;
+  description?: string | null;
+  notes?: string | null;
+  brand?: string | null;
+  tags?: Tag[];
   created_by: string | null;
   created_at: string | null;
-};
-
-export type Tag = {
-  id: string;
-  name: string;
-  created_at?: string | null;
 };
 
 export type Asset = {
@@ -54,6 +58,7 @@ export type Asset = {
   space_id: string | null;
   folder_id: string | null;
   description: string | null;
+  brand?: string | null;
   created_by: string | null;
   uploaded_by: string | null;
   has_thumbnail: boolean | null;
@@ -73,6 +78,7 @@ export type AssetInsert = {
   space_id: string;
   folder_id: string | null;
   description: string | null;
+  brand?: string | null;
   created_by: string | null;
   has_thumbnail: boolean;
   tags?: string[];

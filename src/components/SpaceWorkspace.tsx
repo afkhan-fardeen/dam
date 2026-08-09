@@ -13,8 +13,9 @@ import { FilterChips } from "@/components/FilterChips";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { ROLE_LABELS, getTagChipStyles } from "@/lib/categories";
-import { IconDots, IconX } from "@tabler/icons-react";
+import { IconChevronUp, IconDots, IconInfoCircle, IconX } from "@tabler/icons-react";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { FolderMetaPanel } from "@/components/FolderMetaPanel";
 import { MoveAssetModal } from "@/components/MoveAssetModal";
 import { PasswordField } from "@/components/PasswordField";
 import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
@@ -84,6 +85,7 @@ export function SpaceWorkspace({
   }>({ panel: false, move: false });
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [metaFolder, setMetaFolder] = useState<Folder | null>(null);
   const [fadeKey, setFadeKey] = useState(0);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
@@ -585,6 +587,14 @@ export function SpaceWorkspace({
     [folderId, folders],
   );
 
+  const photosMode = useMemo(() => {
+    if (viewMode !== "grid" || assets.length === 0) return false;
+    const images = assets.filter((a) =>
+      (a.mime_type || "").toLowerCase().startsWith("image/"),
+    ).length;
+    return images / assets.length >= 0.6;
+  }, [assets, viewMode]);
+
   async function createFolder() {
     const name = newFolderName.trim();
     if (!name) return;
@@ -929,7 +939,7 @@ export function SpaceWorkspace({
                   aria-label="Breadcrumb"
                   className="breadcrumbs type-caption p-0 mb-1 max-w-full opacity-60"
                 >
-                  <ul className="flex-wrap">
+                  <ul className="flex-wrap items-center">
                     {breadcrumb.slice(0, -1).map((crumb, i, ancestors) => {
                       const hideMiddle =
                         ancestors.length > 2 && i > 0 && i < ancestors.length - 1;
@@ -946,7 +956,7 @@ export function SpaceWorkspace({
                           <button
                             type="button"
                             onClick={() => navigateFolder(crumb.id)}
-                            className="hover:text-primary max-w-[10rem] truncate"
+                            className="hover:text-[var(--accent)] max-w-[10rem] truncate"
                             style={i === 0 ? { color: space.color } : undefined}
                           >
                             {crumb.name}
@@ -957,14 +967,40 @@ export function SpaceWorkspace({
                   </ul>
                 </nav>
               ) : null}
-              <h1
-                className="type-page truncate"
-                style={
-                  breadcrumb.length === 1 ? { color: space.color } : undefined
-                }
-              >
-                {breadcrumb[breadcrumb.length - 1]?.name ?? space.name}
-              </h1>
+              <div className="flex items-center gap-2 min-w-0">
+                {breadcrumb.length > 1 ? (
+                  <button
+                    type="button"
+                    className="dock-btn !px-2 shrink-0"
+                    title="Up one level"
+                    onClick={() =>
+                      navigateFolder(
+                        breadcrumb[breadcrumb.length - 2]?.id ?? null,
+                      )
+                    }
+                  >
+                    <IconChevronUp size={16} stroke={1.75} />
+                  </button>
+                ) : null}
+                <h1
+                  className="type-page truncate"
+                  style={
+                    breadcrumb.length === 1 ? { color: space.color } : undefined
+                  }
+                >
+                  {breadcrumb[breadcrumb.length - 1]?.name ?? space.name}
+                </h1>
+                {currentFolder ? (
+                  <button
+                    type="button"
+                    className="dock-btn !px-2 shrink-0"
+                    title="Folder details"
+                    onClick={() => setMetaFolder(currentFolder)}
+                  >
+                    <IconInfoCircle size={16} stroke={1.75} />
+                  </button>
+                ) : null}
+              </div>
             </>
           )}
           <p className="type-caption opacity-50 mt-1">
@@ -1362,15 +1398,27 @@ export function SpaceWorkspace({
             <h2 className="type-micro opacity-50 mb-2">Folders</h2>
             <div className="flex flex-col gap-0.5 sm:grid sm:grid-cols-2 sm:gap-0.5">
               {childFolders.map((folder) => (
-                <FolderTile
-                  key={folder.id}
-                  name={folder.name}
-                  color={space.color}
-                  locked={Boolean(folder.passcode_enabled)}
-                  canEdit={editable}
-                  onOpen={() => void tryOpenFolder(folder)}
-                  onMenuAction={(action) => openMenu(folder, action)}
-                />
+                <div key={folder.id} className="relative group/folder">
+                  <FolderTile
+                    name={folder.name}
+                    color={space.color}
+                    locked={Boolean(folder.passcode_enabled)}
+                    canEdit={editable}
+                    onOpen={() => void tryOpenFolder(folder)}
+                    onMenuAction={(action) => openMenu(folder, action)}
+                  />
+                  <button
+                    type="button"
+                    className="absolute top-2 right-10 dock-btn !px-1.5 opacity-0 group-hover/folder:opacity-100 transition-opacity"
+                    title="Folder details"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMetaFolder(folder);
+                    }}
+                  >
+                    <IconInfoCircle size={14} stroke={1.75} />
+                  </button>
+                </div>
               ))}
             </div>
           </section>
@@ -1380,7 +1428,9 @@ export function SpaceWorkspace({
           <h2 className="type-micro opacity-50 mb-2">
             {view === "trash"
               ? "Deleted files"
-              : "Files"}
+              : photosMode
+                ? "Photos"
+                : "Files"}
             {!loading ? ` · ${assets.length}` : ""}
           </h2>
           {loading ? (
@@ -1398,7 +1448,9 @@ export function SpaceWorkspace({
               className={
                 viewMode === "list"
                   ? "flex flex-col gap-0.5"
-                  : "grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2"
+                  : photosMode
+                    ? "grid grid-cols-[repeat(auto-fill,minmax(7.25rem,1fr))] gap-1"
+                    : "grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2"
               }
             >
               {viewMode === "list" ? (
@@ -1856,6 +1908,20 @@ export function SpaceWorkspace({
           busy={moveAssetBusy}
           onClose={() => setMoveAssetTarget(null)}
           onMove={confirmMoveAsset}
+        />
+      ) : null}
+
+      {metaFolder ? (
+        <FolderMetaPanel
+          folder={metaFolder}
+          editable={editable}
+          onClose={() => setMetaFolder(null)}
+          onSaved={(updated) => {
+            setFolders((list) =>
+              list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)),
+            );
+            setMetaFolder(updated);
+          }}
         />
       ) : null}
     </div>

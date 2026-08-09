@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   IconClock,
   IconFolder,
+  IconFolders,
   IconKey,
   IconLock,
   IconLogout,
@@ -77,6 +78,7 @@ export function DriveShell({
   const editable = canEdit(role, profile.is_admin);
   const view = searchParams.get("view") || "all";
   const onHome = pathname === "/";
+  const onBrowse = pathname === "/browse";
   const onSearch = pathname === "/search";
   const onAdmin = pathname.startsWith("/admin");
   const onEntity = pathname.startsWith("/e/");
@@ -274,10 +276,18 @@ export function DriveShell({
       return items;
     }
 
+    // Home / Browse / Favorites / Recent
     return [
       uploadItem({
         onClick: () => openUpload(defaultUploadSpaceId),
       }),
+      {
+        id: "browse",
+        label: "Browse",
+        icon: <IconFolders size={15} stroke={1.75} />,
+        href: "/browse",
+        active: onBrowse,
+      },
       {
         id: "favorites",
         label: "Favorites",
@@ -306,6 +316,7 @@ export function DriveShell({
   }, [
     onAdmin,
     onSearch,
+    onBrowse,
     activeSlug,
     activeSpace,
     pathname,
@@ -373,13 +384,13 @@ export function DriveShell({
 
       {!showHomeHero && !onEntity ? (
         <div className="px-4 sm:px-6 pb-3 max-w-3xl mx-auto w-full">
-          {onSearch || (!onAdmin && !activeSlug) ? (
+          {onSearch || onBrowse || (!onAdmin && !activeSlug) ? (
             <SearchHero
               value={query}
               onChange={setQuery}
               onSubmit={submitSearch}
               onClear={clearSearch}
-              placeholder="Search files and entities…"
+              placeholder="Search files and folders…"
               showCmdK={onSearch}
               glow={onSearch}
               slim

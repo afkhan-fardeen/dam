@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconX } from "@tabler/icons-react";
 import { uploadFileWithProgress } from "@/lib/upload";
 import { useDriveChrome } from "@/components/DriveChrome";
@@ -34,10 +34,50 @@ export function UploadForm({
   const [tagDraft, setTagDraft] = useState("");
   const [entities, setEntities] = useState<PickedEntity[]>([]);
   const [description, setDescription] = useState("");
+  const [brand, setBrand] = useState("");
   const [createdBy, setCreatedBy] = useState(defaultCreatedBy);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inheritHint, setInheritHint] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const params = new URLSearchParams({ space_id: spaceId });
+        if (folderId) params.set("folder_id", folderId);
+        const res = await fetch(`/api/folders/effective?${params}`);
+        const json = await res.json();
+        if (!res.ok || cancelled) return;
+        const effective = json.effective as {
+          brand?: string | null;
+          tagNames?: string[];
+        };
+        if (effective?.brand) setBrand(effective.brand);
+        if (effective?.tagNames?.length) {
+          setTags((prev) => {
+            const next = [...prev];
+            const seen = new Set(prev.map((t) => t.toLowerCase()));
+            for (const name of effective.tagNames!) {
+              if (seen.has(name.toLowerCase())) continue;
+              seen.add(name.toLowerCase());
+              next.push(name);
+            }
+            return next;
+          });
+          setInheritHint("Brand and tags filled from this folder.");
+        } else if (effective?.brand) {
+          setInheritHint("Brand filled from this folder.");
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId, folderId]);
 
   function addNames(raw: string, base: string[] = tags): string[] {
     const parts = raw
@@ -83,6 +123,7 @@ export function UploadForm({
         folderId,
         tags: tagList,
         description: description || null,
+        brand: brand || null,
         createdBy: createdBy || null,
         onProgress: (pct) =>
           upsertJob({
@@ -242,6 +283,21 @@ export function UploadForm({
             onChange={setEntities}
             disabled={busy}
           />
+
+          {inheritHint ? (
+            <p className="type-caption text-[var(--ink-faint)]">{inheritHint}</p>
+          ) : null}
+
+          <label className="flex flex-col gap-1.5">
+            <span className="type-caption">Brand</span>
+            <input
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
+              disabled={busy}
+              placeholder="Optional"
+            />
+          </label>
 
           <label className="flex flex-col gap-1.5">
             <span className="type-caption">Description</span>

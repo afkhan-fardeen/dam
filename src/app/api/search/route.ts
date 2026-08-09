@@ -11,7 +11,7 @@ import {
   listRecentAssets,
   listTrashAssets,
   searchAssets,
-  searchEntityHits,
+  searchFolderHits,
 } from "@/lib/search";
 
 export const runtime = "nodejs";
@@ -109,11 +109,15 @@ export async function GET(request: Request) {
           effectiveUserId,
           assets,
         );
-        const entities = await searchEntityHits(supabase, q);
+        const folders = await searchFolderHits(supabase, {
+          q,
+          spaceIds: allSpaceIds,
+        });
         return NextResponse.json({
           assets: favorited,
           documents: favorited,
-          entities,
+          folders,
+          entities: [],
           count: favorited.length,
           view: "search",
           global: true,
@@ -230,11 +234,15 @@ export async function GET(request: Request) {
         userId: effectiveUserId,
       });
       const favorited = await attachFavorites(supabase, effectiveUserId, assets);
-      const entities = await searchEntityHits(supabase, q);
+      const folders = await searchFolderHits(supabase, {
+        q,
+        spaceIds: [spaceId],
+      });
       return NextResponse.json({
         assets: favorited,
         documents: favorited,
-        entities,
+        folders,
+        entities: [],
         count: favorited.length,
         view: "search",
       });

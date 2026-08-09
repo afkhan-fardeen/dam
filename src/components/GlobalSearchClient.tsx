@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { IconFilter } from "@tabler/icons-react";
+import { IconFilter, IconFolder } from "@tabler/icons-react";
 import { AssetCard } from "@/components/AssetCard";
-import { entityTypeColor } from "@/components/EntityChip";
 import { GlassDropdown } from "@/components/glass/GlassDropdown";
 import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
 import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
-import type { Asset, Entity, Space } from "@/lib/types";
+import type { FolderSearchHit } from "@/lib/search";
+import type { Asset, Space } from "@/lib/types";
 
 type GlobalSearchClientProps = {
   spaces: Space[];
@@ -21,7 +21,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
   const spaceFilter = searchParams.get("space") || "";
 
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [entities, setEntities] = useState<Entity[]>([]);
+  const [folders, setFolders] = useState<FolderSearchHit[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,7 +33,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
   const load = useCallback(async () => {
     if (!q.trim()) {
       setAssets([]);
-      setEntities([]);
+      setFolders([]);
       return;
     }
     setLoading(true);
@@ -45,11 +45,11 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Search failed");
       setAssets((json.documents ?? json.assets ?? []) as Asset[]);
-      setEntities((json.entities ?? []) as Entity[]);
+      setFolders((json.folders ?? []) as FolderSearchHit[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
       setAssets([]);
-      setEntities([]);
+      setFolders([]);
     } finally {
       setLoading(false);
     }
@@ -65,6 +65,11 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     return assets.filter((a) => a.space_id === spaceFilter);
   }, [assets, spaceFilter]);
 
+  const filteredFolders = useMemo(() => {
+    if (!spaceFilter) return folders;
+    return folders.filter((f) => f.space_id === spaceFilter);
+  }, [folders, spaceFilter]);
+
   function openAsset(asset: Asset) {
     const space = asset.space_id ? spaceById.get(asset.space_id) : null;
     if (!space) return;
@@ -72,6 +77,14 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     if (asset.folder_id) params.set("folder", asset.folder_id);
     params.set("asset", asset.id);
     navigate(`/s/${space.slug}?${params.toString()}`);
+  }
+
+  function openFolder(folder: FolderSearchHit) {
+    const slug =
+      folder.space_slug ||
+      (folder.space_id ? spaceById.get(folder.space_id)?.slug : null);
+    if (!slug) return;
+    navigate(`/s/${slug}?folder=${encodeURIComponent(folder.id)}`);
   }
 
   function setSpaceFilter(id: string) {
@@ -90,7 +103,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
             {q.trim()
               ? loading
                 ? `Searching for “${q.trim()}”…`
-                : `${entities.length} entit${entities.length === 1 ? "y" : "ies"} · ${filteredAssets.length} document${filteredAssets.length === 1 ? "" : "s"}`
+                : `${filteredFolders.length} folder${filteredFolders.length === 1 ? "" : "s"} · ${filteredAssets.length} file${filteredAssets.length === 1 ? "" : "s"}`
               : "Type above to search everything."}
           </p>
         </div>
@@ -141,37 +154,44 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
       {!loading &&
       q.trim() &&
       filteredAssets.length === 0 &&
-      entities.length === 0 ? (
+      filteredFolders.length === 0 ? (
         <div className="glass-content p-8 text-center">
           <p className="type-body text-[var(--ink-soft)]">
-            Nothing matched “{q.trim()}”. Try an entity name, invoice number, or
-            file title.
+            Nothing matched “{q.trim()}”. Try a folder name, file title, or tag.
           </p>
         </div>
       ) : null}
 
       {!loading ? (
         <div className="search-results-stagger flex flex-col gap-5">
-          {entities.length > 0 ? (
+          {filteredFolders.length > 0 ? (
             <section className="glass-content p-4 flex flex-col gap-2">
-              <h2 className="card-label px-1">Entities</h2>
+              <h2 className="card-label px-1">Folders</h2>
               <div className="flex flex-col gap-0.5">
-                {entities.map((e) => (
+                {filteredFolders.map((f) => (
                   <button
-                    key={e.id}
+                    key={f.id}
                     type="button"
                     className="card-row"
-                    onClick={() => navigate(`/e/${e.id}`)}
+                    onClick={() => openFolder(f)}
                   >
+                    <IconFolder
+                      size={15}
+                      stroke={1.75}
+                      className="text-[var(--ink-faint)] shrink-0"
+                    />
                     <span
                       className="h-2 w-2 rounded-full shrink-0"
                       style={{
-                        backgroundColor: entityTypeColor(e.entity_type?.name),
+                        backgroundColor:
+                          f.space_color ||
+                          spaceById.get(f.space_id)?.color ||
+                          "#a1a1a6",
                       }}
                     />
-                    <span className="flex-1 truncate text-left">{e.name}</span>
-                    <span className="type-caption">
-                      {e.entity_type?.label || "Entity"}
+                    <span className="flex-1 truncate text-left">{f.name}</span>
+                    <span className="type-caption truncate max-w-[8rem]">
+                      {f.space_name || spaceById.get(f.space_id)?.name || ""}
                     </span>
                   </button>
                 ))}
