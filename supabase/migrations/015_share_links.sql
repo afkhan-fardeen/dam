@@ -17,6 +17,7 @@ create index if not exists share_links_token_idx on share_links(token);
 
 alter table share_links enable row level security;
 
+drop policy if exists share_links_select_own on share_links;
 create policy share_links_select_own on share_links
   for select to authenticated
   using (
@@ -31,20 +32,24 @@ create policy share_links_select_own on share_links
     )
   );
 
+drop policy if exists share_links_insert on share_links;
 create policy share_links_insert on share_links
   for insert to authenticated
   with check (
-    created_by = auth.uid()
-    and exists (
-      select 1 from assets a
-      join space_memberships m on m.space_id = a.space_id and m.user_id = auth.uid()
-      where a.id = share_links.asset_id and m.role in ('editor', 'admin')
+    (
+      created_by = auth.uid()
+      and exists (
+        select 1 from assets a
+        join space_memberships m on m.space_id = a.space_id and m.user_id = auth.uid()
+        where a.id = share_links.asset_id and m.role = 'editor'
+      )
     )
     or exists (
       select 1 from profiles p where p.id = auth.uid() and p.is_admin = true
     )
   );
 
+drop policy if exists share_links_update on share_links;
 create policy share_links_update on share_links
   for update to authenticated
   using (
