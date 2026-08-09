@@ -36,6 +36,7 @@ import { GlassDropdown } from "@/components/glass/GlassDropdown";
 import { GlassButton } from "@/components/glass/GlassButton";
 import { SearchHero } from "@/components/glass/SearchHero";
 import { navigateWithTransition } from "@/components/glass/useViewTransitionNavigate";
+import { readLastPlace } from "@/lib/lastPlace";
 
 type DriveShellProps = {
   spaces: Space[];
@@ -118,7 +119,7 @@ export function DriveShell({
 
   function uploadBlockedReason(): string | undefined {
     if (serverStatus === "checking") return "Checking PC…";
-    if (!online) return "PC offline";
+    if (!online) return "File server unavailable — uploads and previews may fail";
     if (!defaultUploadSpaceId) return "No place to upload — ask an admin";
     if (view === "trash") return "Leave trash to upload";
     return undefined;
@@ -184,6 +185,47 @@ export function DriveShell({
 
   const shellUploadSpaceId = uploadSpaceId || defaultUploadSpaceId;
   const uploadTitle = uploadBlockedReason();
+
+  const editableDestinations = useMemo(
+    () =>
+      spaces
+        .filter((s) => {
+          const r = roleForSpace(memberships, s.id, profile.is_admin);
+          return canEdit(r, profile.is_admin);
+        })
+        .map((s) => ({ id: s.id, name: s.name })),
+    [spaces, memberships, profile.is_admin],
+  );
+
+  const uploadSpace =
+    spaces.find((s) => s.id === shellUploadSpaceId) ?? null;
+  const uploadFolderId = activeSlug ? searchParams.get("folder") : null;
+  const [uploadFolderName, setUploadFolderName] = useState<string | null>(null);
+  const [uploadSpaceName, setUploadSpaceName] = useState("Place");
+
+  useEffect(() => {
+    if (!uploadOpen) return;
+    const last = readLastPlace();
+    if (uploadFolderId) {
+      setUploadFolderName(
+        last?.folderId === uploadFolderId ? last.folderName : "Folder",
+      );
+    } else {
+      setUploadFolderName(null);
+    }
+    setUploadSpaceName(
+      (activeSlug && activeSpace?.name) ||
+        uploadSpace?.name ||
+        last?.spaceName ||
+        "Place",
+    );
+  }, [
+    uploadOpen,
+    uploadFolderId,
+    activeSlug,
+    activeSpace?.name,
+    uploadSpace?.name,
+  ]);
 
   const dockItems: DockItem[] = useMemo(() => {
     if (onAdmin) {
@@ -263,20 +305,10 @@ export function DriveShell({
           active: view === "trash",
         });
       }
-      items.push({
-        id: "settings",
-        icon: <IconSettings size={15} stroke={1.75} />,
-        title: "Settings",
-        dividerBefore: true,
-        onClick: () => {
-          setPasswordOpen(true);
-          setPasswordMsg(null);
-        },
-      });
       return items;
     }
 
-    // Home / Browse / Favorites / Recent
+    // Home / Browse / Favorites / Recents — Settings lives under avatar
     return [
       uploadItem({
         onClick: () => openUpload(defaultUploadSpaceId),
@@ -289,28 +321,18 @@ export function DriveShell({
         active: onBrowse,
       },
       {
-        id: "favorites",
-        label: "Favorites",
-        icon: <IconStar size={15} stroke={1.75} />,
-        href: "/?view=favorites",
-        active: view === "favorites",
-      },
-      {
         id: "recent",
-        label: "Recent",
+        label: "Recents",
         icon: <IconClock size={15} stroke={1.75} />,
         href: "/?view=recent",
         active: view === "recent",
       },
       {
-        id: "settings",
-        icon: <IconSettings size={15} stroke={1.75} />,
-        title: "Settings",
-        dividerBefore: true,
-        onClick: () => {
-          setPasswordOpen(true);
-          setPasswordMsg(null);
-        },
+        id: "favorites",
+        label: "Favorites",
+        icon: <IconStar size={15} stroke={1.75} />,
+        href: "/?view=favorites",
+        active: view === "favorites",
       },
     ];
   }, [
@@ -368,7 +390,7 @@ export function DriveShell({
                 setPasswordMsg(null);
               }}
             >
-              <IconKey size={15} /> Change password
+              <IconKey size={15} /> Settings
             </button>
             <div className="card-divider" />
             <button
@@ -442,7 +464,17 @@ export function DriveShell({
       {uploadOpen && shellUploadSpaceId ? (
         <UploadForm
           spaceId={shellUploadSpaceId}
-          folderId={activeSlug ? searchParams.get("folder") : null}
+          spaceName={uploadSpaceName}
+          folderId={uploadFolderId}
+          folderName={uploadFolderName}
+          destinationOptions={
+            activeSlug ? undefined : editableDestinations
+          }
+          onDestinationChange={
+            activeSlug
+              ? undefined
+              : (id) => openUpload(id)
+          }
           defaultCreatedBy={profile.full_name || profile.email || ""}
           onCancel={() => closeUpload()}
           onUploaded={() => {

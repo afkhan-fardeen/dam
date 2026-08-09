@@ -127,7 +127,7 @@ export function CommandBar({
     return list;
   }, [canUpload, isAdmin, onUpload, router]);
 
-  /** Sections: Entities → Documents → Actions (spaces omitted from user chrome). */
+  /** Sections: Entities → Files → Actions (spaces omitted from user chrome). */
   const sections = useMemo(() => {
     const q = query.trim();
     if (!q) {
@@ -148,7 +148,7 @@ export function CommandBar({
 
     return [
       { label: "Entities", items: entityItems },
-      { label: "Documents", items: docItems },
+      { label: "Files", items: docItems },
       { label: "Actions", items: actionItems },
     ].filter((s) => s.items.length > 0);
   }, [query, entities, documents, actions]);

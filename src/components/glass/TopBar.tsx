@@ -73,10 +73,10 @@ export function TopBar({
             className="flex items-center gap-1.5 type-caption"
             title={
               status.label === "PC offline"
-                ? "Windows file server is unreachable — uploads and previews may fail"
+                ? "File server unavailable — uploads and previews may fail"
                 : status.label === "PC connected"
-                  ? "Windows file server is online"
-                  : "Checking Windows file server…"
+                  ? "File server is online"
+                  : "Checking file server…"
             }
           >
             <span

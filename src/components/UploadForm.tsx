@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { IconX } from "@tabler/icons-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { IconFolderPlus, IconX } from "@tabler/icons-react";
 import { uploadFileWithProgress } from "@/lib/upload";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { getTagChipStyles } from "@/lib/categories";
@@ -11,25 +11,58 @@ import {
 } from "@/components/EntityPicker";
 import { GlassButton } from "@/components/glass/GlassButton";
 
+type DestinationOption = {
+  id: string;
+  name: string;
+};
+
 type UploadFormProps = {
   spaceId: string;
+  spaceName: string;
   folderId: string | null;
+  folderName: string | null;
   defaultCreatedBy: string;
+  /** Editable places when destination can be switched (e.g. from Home). */
+  destinationOptions?: DestinationOption[];
+  onDestinationChange?: (spaceId: string) => void;
   onUploaded: (assetIds?: string[]) => void;
   onCancel: () => void;
   initialFile?: File | null;
 };
 
+type QueuedFile = {
+  key: string;
+  file: File;
+};
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileKey(file: File, index: number): string {
+  return `${file.name}:${file.size}:${file.lastModified}:${index}`;
+}
+
 export function UploadForm({
   spaceId,
+  spaceName,
   folderId,
+  folderName,
   defaultCreatedBy,
+  destinationOptions,
+  onDestinationChange,
   onUploaded,
   onCancel,
   initialFile = null,
 }: UploadFormProps) {
   const { upsertJob, removeJob, serverOnline } = useDriveChrome();
-  const [file, setFile] = useState<File | null>(initialFile);
+  const [queue, setQueue] = useState<QueuedFile[]>(() =>
+    initialFile
+      ? [{ key: fileKey(initialFile, 0), file: initialFile }]
+      : [],
+  );
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
   const [entities, setEntities] = useState<PickedEntity[]>([]);
@@ -38,11 +71,23 @@ export function UploadForm({
   const [createdBy, setCreatedBy] = useState(defaultCreatedBy);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inheritHint, setInheritHint] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [inheritedBrand, setInheritedBrand] = useState<string | null>(null);
+  const [inheritedTags, setInheritedTags] = useState<string[]>([]);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [doneCount, setDoneCount] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const folderInputId = useId();
+
+  useEffect(() => {
+    const el = folderInputRef.current;
+    if (el) el.setAttribute("webkitdirectory", "");
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    setInheritedBrand(null);
+    setInheritedTags([]);
     void (async () => {
       try {
         const params = new URLSearchParams({ space_id: spaceId });
@@ -54,21 +99,24 @@ export function UploadForm({
           brand?: string | null;
           tagNames?: string[];
         };
-        if (effective?.brand) setBrand(effective.brand);
-        if (effective?.tagNames?.length) {
+        const fromBrand = effective?.brand?.trim() || null;
+        const fromTags = effective?.tagNames ?? [];
+        if (fromBrand) {
+          setInheritedBrand(fromBrand);
+          setBrand((prev) => prev || fromBrand);
+        }
+        if (fromTags.length) {
+          setInheritedTags(fromTags);
           setTags((prev) => {
             const next = [...prev];
             const seen = new Set(prev.map((t) => t.toLowerCase()));
-            for (const name of effective.tagNames!) {
+            for (const name of fromTags) {
               if (seen.has(name.toLowerCase())) continue;
               seen.add(name.toLowerCase());
               next.push(name);
             }
             return next;
           });
-          setInheritHint("Brand and tags filled from this folder.");
-        } else if (effective?.brand) {
-          setInheritHint("Brand filled from this folder.");
         }
       } catch {
         /* ignore */
@@ -78,6 +126,28 @@ export function UploadForm({
       cancelled = true;
     };
   }, [spaceId, folderId]);
+
+  function addFiles(list: FileList | File[] | null) {
+    if (!list || list.length === 0) return;
+    const incoming = Array.from(list);
+    setQueue((prev) => {
+      const next = [...prev];
+      const seen = new Set(prev.map((q) => `${q.file.name}:${q.file.size}:${q.file.lastModified}`));
+      for (const file of incoming) {
+        const sig = `${file.name}:${file.size}:${file.lastModified}`;
+        if (seen.has(sig)) continue;
+        seen.add(sig);
+        next.push({ key: fileKey(file, next.length), file });
+      }
+      return next;
+    });
+    setDoneCount(null);
+    setError(null);
+  }
+
+  function removeQueued(key: string) {
+    setQueue((prev) => prev.filter((q) => q.key !== key));
+  }
 
   function addNames(raw: string, base: string[] = tags): string[] {
     const parts = raw
@@ -100,14 +170,8 @@ export function UploadForm({
     return next;
   }
 
-  async function runUpload(target: File, tagList: string[]) {
-    if (!serverOnline) {
-      setError("File server is offline — uploads are paused.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const jobId = `${Date.now()}-${target.name}`;
+  async function uploadOne(target: File, tagList: string[]): Promise<string | undefined> {
+    const jobId = `${Date.now()}-${target.name}-${Math.random().toString(36).slice(2, 7)}`;
     upsertJob({
       id: jobId,
       name: target.name,
@@ -154,12 +218,10 @@ export function UploadForm({
           ),
         );
       }
-
-      onUploaded(asset?.id ? [asset.id] : undefined);
+      return asset?.id;
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Upload failed. Try again.";
-      setError(message);
       upsertJob({
         id: jobId,
         name: target.name,
@@ -168,20 +230,49 @@ export function UploadForm({
         status: "error",
         error: message,
       });
-    } finally {
-      setBusy(false);
+      throw new Error(`${target.name}: ${message}`);
     }
   }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!file) {
-      setError("Choose a file to upload.");
+    if (!serverOnline) {
+      setError("File server is offline — uploads are paused.");
+      return;
+    }
+    if (queue.length === 0) {
+      setError("Choose files or a folder to upload.");
       return;
     }
     const tagList = commitDraftTag();
-    await runUpload(file, tagList);
+    setBusy(true);
+    setError(null);
+    setDoneCount(null);
+
+    const ids: string[] = [];
+    try {
+      for (const item of queue) {
+        const id = await uploadOne(item.file, tagList);
+        if (id) ids.push(id);
+      }
+      setDoneCount(queue.length);
+      window.setTimeout(() => {
+        onUploaded(ids.length ? ids : undefined);
+      }, 700);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed. Try again.");
+    } finally {
+      setBusy(false);
+    }
   }
+
+  const destFolderLabel = folderId ? folderName || "Folder" : "Root";
+  const inheritParts = [
+    inheritedBrand ? inheritedBrand : null,
+    inheritedTags.length ? inheritedTags.join(", ") : null,
+  ].filter(Boolean) as string[];
+  const canSwitchPlace =
+    Boolean(destinationOptions?.length) && Boolean(onDestinationChange) && !folderId;
 
   return (
     <dialog
@@ -195,11 +286,16 @@ export function UploadForm({
       <form
         onSubmit={(e) => void handleSubmit(e)}
         onClick={(e) => e.stopPropagation()}
-        className="modal-box max-w-md p-0 flex flex-col max-h-[min(90vh,560px)] glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+        className="modal-box max-w-md p-0 flex flex-col max-h-[min(90vh,640px)] glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
         style={{ borderRadius: 22 }}
       >
-        <div className="shrink-0 flex items-center gap-2 px-5 pt-5 pb-2">
-          <h3 className="type-title flex-1">Upload file</h3>
+        <div className="shrink-0 flex items-start gap-2 px-5 pt-5 pb-2">
+          <div className="flex-1 min-w-0">
+            <h3 className="type-title">Upload</h3>
+            <p className="type-caption mt-1 truncate">
+              Uploading to {spaceName} / {destFolderLabel}
+            </p>
+          </div>
           <button
             type="button"
             aria-label="Close"
@@ -212,20 +308,116 @@ export function UploadForm({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-3 flex flex-col gap-3">
-          <label className="flex flex-col gap-1.5">
-            <span className="type-caption">File</span>
+          {canSwitchPlace ? (
+            <label className="flex flex-col gap-1.5">
+              <span className="type-caption">Place</span>
+              <select
+                className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
+                value={spaceId}
+                disabled={busy}
+                onChange={(e) => onDestinationChange?.(e.target.value)}
+              >
+                {destinationOptions!.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <div className="flex flex-col gap-1.5">
+            <span className="type-caption">Files</span>
+            <div className="flex flex-wrap gap-2">
+              <GlassButton
+                variant="glass"
+                disabled={busy}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Choose files
+              </GlassButton>
+              <GlassButton
+                variant="glass"
+                disabled={busy}
+                onClick={() => folderInputRef.current?.click()}
+              >
+                <IconFolderPlus size={15} stroke={1.75} />
+                Choose folder
+              </GlassButton>
+            </div>
             <input
-              ref={inputRef}
+              ref={fileInputRef}
               type="file"
-              className="file-input file-input-bordered file-input-sm w-full type-body bg-white/70 border-[var(--line)]"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              autoFocus
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                addFiles(e.target.files);
+                e.target.value = "";
+              }}
             />
-            {file ? (
-              <span className="type-caption text-[#34c759] truncate">
-                {file.name}
+            <input
+              ref={folderInputRef}
+              id={folderInputId}
+              type="file"
+              className="hidden"
+              multiple
+              onChange={(e) => {
+                addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            {queue.length > 0 ? (
+              <ul className="mt-1 max-h-36 overflow-y-auto flex flex-col gap-1 rounded-[12px] bg-white/40 p-2">
+                {queue.map((item) => (
+                  <li
+                    key={item.key}
+                    className="flex items-center gap-2 type-caption text-[var(--ink)]"
+                  >
+                    <span className="flex-1 truncate" title={item.file.webkitRelativePath || item.file.name}>
+                      {item.file.webkitRelativePath || item.file.name}
+                    </span>
+                    <span className="shrink-0 text-[var(--ink-faint)]">
+                      {formatBytes(item.file.size)}
+                    </span>
+                    <button
+                      type="button"
+                      className="dock-btn !px-1.5 !py-0.5"
+                      disabled={busy}
+                      aria-label={`Remove ${item.file.name}`}
+                      onClick={() => removeQueued(item.key)}
+                    >
+                      <IconX size={12} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="type-caption text-[var(--ink-faint)]">
+                Select multiple files or an entire folder.
               </span>
-            ) : null}
+            )}
+          </div>
+
+          {inheritParts.length > 0 ? (
+            <div className="rounded-[12px] bg-white/40 px-3 py-2">
+              <p className="type-caption text-[var(--ink-soft)]">
+                From folder: {inheritParts.join(" · ")}
+              </p>
+              <p className="type-caption text-[var(--ink-faint)] mt-0.5">
+                Edit brand or tags below before uploading.
+              </p>
+            </div>
+          ) : null}
+
+          <label className="flex flex-col gap-1.5">
+            <span className="type-caption">Brand</span>
+            <input
+              value={brand}
+              onChange={(e) => setBrand(e.target.value)}
+              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
+              disabled={busy}
+              placeholder="Optional"
+            />
           </label>
 
           <div className="flex flex-col gap-1.5">
@@ -243,6 +435,7 @@ export function UploadForm({
                       }
                       className="tag-chip gap-1"
                       style={chip.style}
+                      disabled={busy}
                     >
                       {t}
                       <IconX size={10} />
@@ -278,27 +471,6 @@ export function UploadForm({
             </div>
           </div>
 
-          <EntityPicker
-            selected={entities}
-            onChange={setEntities}
-            disabled={busy}
-          />
-
-          {inheritHint ? (
-            <p className="type-caption text-[var(--ink-faint)]">{inheritHint}</p>
-          ) : null}
-
-          <label className="flex flex-col gap-1.5">
-            <span className="type-caption">Brand</span>
-            <input
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
-              disabled={busy}
-              placeholder="Optional"
-            />
-          </label>
-
           <label className="flex flex-col gap-1.5">
             <span className="type-caption">Description</span>
             <input
@@ -319,8 +491,31 @@ export function UploadForm({
             />
           </label>
 
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              className="type-caption text-left text-[var(--accent)] hover:opacity-80"
+              disabled={busy}
+              onClick={() => setMoreOpen((v) => !v)}
+            >
+              {moreOpen ? "Hide options" : "More options"}
+            </button>
+            {moreOpen ? (
+              <EntityPicker
+                selected={entities}
+                onChange={setEntities}
+                disabled={busy}
+              />
+            ) : null}
+          </div>
+
           {error ? (
             <p className="type-caption text-[#ff3b30]">{error}</p>
+          ) : null}
+          {doneCount != null ? (
+            <p className="type-caption text-[#34c759]">
+              {doneCount} uploaded
+            </p>
           ) : null}
         </div>
 
@@ -331,9 +526,13 @@ export function UploadForm({
           <GlassButton
             variant="primary"
             type="submit"
-            disabled={busy || !serverOnline}
+            disabled={busy || !serverOnline || queue.length === 0}
           >
-            {busy ? "Uploading…" : "Upload"}
+            {busy
+              ? "Uploading…"
+              : queue.length > 1
+                ? `Upload ${queue.length}`
+                : "Upload"}
           </GlassButton>
         </div>
       </form>

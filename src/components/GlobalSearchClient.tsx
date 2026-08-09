@@ -201,7 +201,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
 
           {filteredAssets.length > 0 ? (
             <section className="glass-content p-4 flex flex-col gap-3">
-              <h2 className="card-label px-1">Documents</h2>
+              <h2 className="card-label px-1">Files</h2>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
                 {filteredAssets.map((asset) => {
                   const space = asset.space_id

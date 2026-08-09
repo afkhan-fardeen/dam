@@ -2,7 +2,13 @@
 
 import { useDriveChrome } from "@/components/DriveChrome";
 import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
-import { useMemo, useState, type FormEvent } from "react";
+import {
+  lastPlaceHref,
+  lastPlaceLabel,
+  readLastPlace,
+  type LastPlace,
+} from "@/lib/lastPlace";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { SearchHero } from "@/components/glass/SearchHero";
 
 type HomeGlassProps = {
@@ -33,7 +39,7 @@ function statusCaption(
     case "checking":
       return "Checking PC…";
     default:
-      return "PC offline — uploads paused";
+      return "File server unavailable — uploads paused";
   }
 }
 
@@ -41,6 +47,11 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
   const navigate = useViewTransitionNavigate();
   const { serverStatus } = useDriveChrome();
   const [query, setQuery] = useState("");
+  const [continuePlace, setContinuePlace] = useState<LastPlace | null>(null);
+
+  useEffect(() => {
+    setContinuePlace(readLastPlace());
+  }, []);
 
   const firstName = useMemo(() => {
     const n = profileName.trim();
@@ -67,12 +78,21 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
           value={query}
           onChange={setQuery}
           onSubmit={submitSearch}
-          placeholder="Search files and entities…"
+          placeholder="Search files and folders…"
           showCmdK
           glow
           className="w-full"
         />
         <p className="type-caption mt-4 text-center">{statusCaption(serverStatus)}</p>
+        {continuePlace ? (
+          <button
+            type="button"
+            className="type-caption mt-3 text-[var(--accent)] hover:opacity-80 transition-opacity"
+            onClick={() => navigate(lastPlaceHref(continuePlace))}
+          >
+            Continue: {lastPlaceLabel(continuePlace)}
+          </button>
+        ) : null}
       </div>
     </div>
   );

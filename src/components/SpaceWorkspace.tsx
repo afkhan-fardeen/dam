@@ -21,6 +21,7 @@ import { PasswordField } from "@/components/PasswordField";
 import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
 import { uploadFileWithProgress } from "@/lib/upload";
 import { queueAssetDownload } from "@/lib/download";
+import { writeLastPlace } from "@/lib/lastPlace";
 import { readViewMode, writeViewMode, type ViewMode } from "@/lib/uiPrefs";
 import {
   canDownload,
@@ -252,7 +253,28 @@ export function SpaceWorkspace({
     setFolderId(id);
     setSelectedIds(new Set());
     setSelectionMode(false);
+    const folderName = id
+      ? folders.find((f) => f.id === id)?.name ?? null
+      : null;
+    writeLastPlace({
+      spaceSlug: space.slug,
+      spaceName: space.name,
+      folderId: id,
+      folderName,
+    });
   }
+
+  useEffect(() => {
+    const folderName = folderId
+      ? folders.find((f) => f.id === folderId)?.name ?? null
+      : null;
+    writeLastPlace({
+      spaceSlug: space.slug,
+      spaceName: space.name,
+      folderId,
+      folderName,
+    });
+  }, [space.slug, space.name, folderId, folders]);
 
   useEffect(() => {
     setSelectedIds(new Set());
