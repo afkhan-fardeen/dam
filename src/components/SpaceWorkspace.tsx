@@ -18,7 +18,10 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { FolderMetaPanel } from "@/components/FolderMetaPanel";
 import { MoveAssetModal } from "@/components/MoveAssetModal";
 import { PasswordField } from "@/components/PasswordField";
-import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { FolderTree } from "@/components/FolderTree";
+import { SelectionInspector } from "@/components/SelectionInspector";
+import { VirtualPhotoGrid } from "@/components/VirtualPhotoGrid";
 import { uploadFileWithProgress } from "@/lib/upload";
 import { queueAssetDownload } from "@/lib/download";
 import { writeLastPlace } from "@/lib/lastPlace";
@@ -609,13 +612,7 @@ export function SpaceWorkspace({
     [folderId, folders],
   );
 
-  const photosMode = useMemo(() => {
-    if (viewMode !== "grid" || assets.length === 0) return false;
-    const images = assets.filter((a) =>
-      (a.mime_type || "").toLowerCase().startsWith("image/"),
-    ).length;
-    return images / assets.length >= 0.6;
-  }, [assets, viewMode]);
+  const photosMode = viewMode === "photos";
 
   async function createFolder() {
     const name = newFolderName.trim();
@@ -912,12 +909,16 @@ export function SpaceWorkspace({
     if (uploaded.length > 0) setBulkReview(uploaded);
   }
 
+  const inspectorAssets = useMemo(
+    () => assets.filter((a) => selectedIds.has(a.id)),
+    [assets, selectedIds],
+  );
+
   return (
     <div
-      className={`flex flex-col gap-4 p-4 sm:p-5 w-full min-h-[60vh] relative ${
-        dragging ? "outline outline-2 outline-dashed" : ""
+      className={`flex gap-0 w-full min-h-[60vh] relative ${
+        dragging ? "outline outline-2 outline-dashed outline-[var(--accent)]" : ""
       }`}
-      style={dragging ? { outlineColor: space.color } : undefined}
       onDragEnter={(e) => {
         if (!editable || !serverOnline) return;
         e.preventDefault();
@@ -939,6 +940,15 @@ export function SpaceWorkspace({
         }
       }}
     >
+      {view === "all" && !query.trim() ? (
+        <FolderTree
+          folders={folders}
+          spaceName={space.name}
+          currentFolderId={folderId}
+          onNavigate={(id) => navigateFolder(id)}
+        />
+      ) : null}
+      <div className="flex-1 min-w-0 flex flex-col gap-4 p-4 sm:p-5 relative">
       {dragging ? (
         <div
           className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center bg-base-100/70 type-label"
@@ -1210,8 +1220,8 @@ export function SpaceWorkspace({
             {selectionMode ? "Cancel select" : "Select"}
           </button>
           {selectionMode && selectedIds.size > 0 ? (
-            <>
-              <span className="type-caption opacity-60">
+            <div className="bulk-bar flex flex-wrap items-center gap-2 w-full">
+              <span className="type-caption">
                 {selectedIds.size} selected
               </span>
               {editable ? (
@@ -1219,7 +1229,7 @@ export function SpaceWorkspace({
                   <button
                     type="button"
                     disabled={bulkBusy}
-                    className="btn btn-ghost btn-sm"
+                    className="btn-flat !h-8 px-3 text-[12px]"
                     onClick={() => {
                       setBulkFolderId(folderId);
                       setModalError(null);
@@ -1231,7 +1241,7 @@ export function SpaceWorkspace({
                   <button
                     type="button"
                     disabled={bulkBusy}
-                    className="btn btn-ghost btn-sm"
+                    className="btn-flat-danger !h-8 px-3 text-[12px]"
                     onClick={() => void bulkTrash()}
                   >
                     Trash
@@ -1242,13 +1252,13 @@ export function SpaceWorkspace({
                 <button
                   type="button"
                   disabled={bulkBusy}
-                  className="btn btn-ghost btn-sm"
+                  className="btn-flat !h-8 px-3 text-[12px]"
                   onClick={() => void bulkZipDownload()}
                 >
                   {bulkBusy ? "Preparing…" : "Download zip"}
                 </button>
               ) : null}
-            </>
+            </div>
           ) : null}
         </div>
       ) : null}
@@ -1420,7 +1430,27 @@ export function SpaceWorkspace({
             <h2 className="type-micro opacity-50 mb-2">Folders</h2>
             <div className="flex flex-col gap-0.5 sm:grid sm:grid-cols-2 sm:gap-0.5">
               {childFolders.map((folder) => (
-                <div key={folder.id} className="relative group/folder">
+                <div
+                  key={folder.id}
+                  className="relative group/folder"
+                  onDragOver={(e) => {
+                    if (!editable || !serverOnline) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onDrop={(e) => {
+                    if (!editable || !serverOnline) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDragging(false);
+                    if (e.dataTransfer.files?.length) {
+                      navigateFolder(folder.id);
+                      window.setTimeout(() => {
+                        void uploadDroppedFiles(e.dataTransfer.files);
+                      }, 50);
+                    }
+                  }}
+                >
                   <FolderTile
                     name={folder.name}
                     color={space.color}
@@ -1449,30 +1479,81 @@ export function SpaceWorkspace({
         <section>
           <h2 className="type-micro opacity-50 mb-2">
             {view === "trash"
-              ? "Deleted files"
+              ? "Recently Deleted"
               : photosMode
                 ? "Photos"
                 : "Files"}
             {!loading ? ` · ${assets.length}` : ""}
           </h2>
           {loading ? (
-            <GlassSkeleton rows={4} />
+            <Skeleton rows={4} />
           ) : assets.length === 0 ? (
-            <p className="type-body opacity-60 py-8">
-              {view === "trash"
-                ? "Trash is empty."
-                : editable
-                  ? "Nothing here yet. Drop files here or use Upload in the dock."
-                  : "Nothing here yet."}
-            </p>
+            <div className="surface empty-state">
+              <p className="type-title">
+                {view === "trash" ? "Recently Deleted" : "Empty"}
+              </p>
+              <p className="type-caption mt-2">
+                {view === "trash"
+                  ? "Trash is empty."
+                  : editable
+                    ? "Drop files here or use Upload in the dock."
+                    : "Nothing here yet."}
+              </p>
+            </div>
+          ) : photosMode ? (
+            <VirtualPhotoGrid
+              items={assets}
+              cellSize={116}
+              gap={4}
+              getKey={(a) => a.id}
+              renderItem={(asset) => (
+                <AssetCard
+                  asset={asset}
+                  layout="grid"
+                  thumbnailUrl={
+                    asset.has_thumbnail
+                      ? `/api/media/thumbnail/${encodeURIComponent(asset.file_id)}`
+                      : null
+                  }
+                  selected={selectedIds.has(asset.id)}
+                  selectionMode={selectionMode}
+                  onToggleSelect={() => toggleSelect(asset.id)}
+                  onToggleFavorite={
+                    view === "trash"
+                      ? undefined
+                      : () => void toggleFavorite(asset)
+                  }
+                  onClick={() => {
+                    setDetailLaunch({ panel: false, move: false });
+                    setSelected(asset);
+                  }}
+                  canDownload={downloadable && view !== "trash"}
+                  canEdit={editable && view !== "trash"}
+                  onDownload={
+                    downloadable && view !== "trash"
+                      ? () => {
+                          void queueAssetDownload(
+                            asset.file_id,
+                            asset.original_name || "download",
+                            { upsertJob, removeJob },
+                          );
+                        }
+                      : undefined
+                  }
+                  onMenuAction={
+                    editable && view !== "trash"
+                      ? (action) => void handleAssetMenu(asset, action)
+                      : undefined
+                  }
+                />
+              )}
+            />
           ) : (
             <div
               className={
                 viewMode === "list"
                   ? "flex flex-col gap-0.5"
-                  : photosMode
-                    ? "grid grid-cols-[repeat(auto-fill,minmax(7.25rem,1fr))] gap-1"
-                    : "grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2"
+                  : "grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2"
               }
             >
               {viewMode === "list" ? (
@@ -1495,7 +1576,7 @@ export function SpaceWorkspace({
                 <AssetCard
                   key={asset.id}
                   asset={asset}
-                  layout={viewMode}
+                  layout={viewMode === "list" ? "list" : "grid"}
                   thumbnailUrl={
                     asset.has_thumbnail
                       ? `/api/media/thumbnail/${encodeURIComponent(asset.file_id)}`
@@ -1538,10 +1619,33 @@ export function SpaceWorkspace({
         </section>
       </div>
 
+      </div>
+
+      {inspectorAssets.length > 0 && view !== "trash" && !selected ? (
+        <SelectionInspector
+          assets={inspectorAssets}
+          folder={null}
+          spaceName={space.name}
+          onClear={() => {
+            setSelectedIds(new Set());
+            setSelectionMode(false);
+          }}
+          onOpenAsset={(a) => {
+            setDetailLaunch({ panel: true, move: false });
+            setSelected(a);
+          }}
+        />
+      ) : null}
+
       {selected ? (
         <AssetDetail
           key={`${selected.id}-${detailLaunch.move ? "move" : "view"}`}
           asset={selected}
+          assets={assets}
+          onNavigateAsset={(a) => {
+            setDetailLaunch({ panel: false, move: false });
+            setSelected(a);
+          }}
           folders={folders}
           canDownload={downloadable && view !== "trash"}
           canDelete={editable && view !== "trash"}

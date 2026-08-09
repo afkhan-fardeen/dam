@@ -1,7 +1,7 @@
 "use client";
 
 import { useDriveChrome } from "@/components/DriveChrome";
-import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
+import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
 import {
   lastPlaceHref,
   lastPlaceLabel,
@@ -9,10 +9,12 @@ import {
   type LastPlace,
 } from "@/lib/lastPlace";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { SearchHero } from "@/components/glass/SearchHero";
+import { SearchField } from "@/components/ui/SearchField";
+import { SearchTypeahead } from "@/components/SearchTypeahead";
 
 type HomeGlassProps = {
   profileName: string;
+  spaces?: import("@/lib/types").Space[];
 };
 
 function greetingHour(): string {
@@ -43,11 +45,12 @@ function statusCaption(
   }
 }
 
-export function HomeGlass({ profileName }: HomeGlassProps) {
+export function HomeGlass({ profileName, spaces = [] }: HomeGlassProps) {
   const navigate = useViewTransitionNavigate();
   const { serverStatus } = useDriveChrome();
   const [query, setQuery] = useState("");
   const [continuePlace, setContinuePlace] = useState<LastPlace | null>(null);
+  const [typeaheadOpen, setTypeaheadOpen] = useState(false);
 
   useEffect(() => {
     setContinuePlace(readLastPlace());
@@ -63,31 +66,46 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
     e.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) return;
+    setTypeaheadOpen(false);
     navigate(`/search?q=${encodeURIComponent(trimmed)}`);
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-52px-5.5rem)] px-4 pb-24">
-      <div className="glass-appear flex flex-col items-center w-full max-w-[560px]">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-var(--bar-h)-var(--dock-h))] px-4 pb-20">
+      <div className="flat-fade flex flex-col items-center w-full max-w-[560px]">
         <p className="type-greeting mb-1 text-center">
           {greetingHour()},{" "}
-          <span className="text-[var(--ink)] font-semibold">{firstName}</span>
+          <span className="font-bold">{firstName}</span>
         </p>
         <p className="type-caption mb-8 text-center">{formatDate()}</p>
-        <SearchHero
+        <SearchField
           value={query}
-          onChange={setQuery}
+          onChange={(v) => {
+            setQuery(v);
+            setTypeaheadOpen(v.trim().length >= 2);
+          }}
           onSubmit={submitSearch}
           placeholder="Search files and folders…"
           showCmdK
-          glow
           className="w-full"
+          dropdown={
+            typeaheadOpen ? (
+              <SearchTypeahead
+                query={query}
+                spaces={spaces}
+                onClose={() => setTypeaheadOpen(false)}
+                onSelect={() => setTypeaheadOpen(false)}
+              />
+            ) : null
+          }
         />
-        <p className="type-caption mt-4 text-center">{statusCaption(serverStatus)}</p>
+        <p className="type-caption mt-4 text-center">
+          {statusCaption(serverStatus)}
+        </p>
         {continuePlace ? (
           <button
             type="button"
-            className="type-caption mt-3 text-[var(--accent)] hover:opacity-80 transition-opacity"
+            className="type-caption mt-3 text-[var(--accent)] hover:underline"
             onClick={() => navigate(lastPlaceHref(continuePlace))}
           >
             Continue: {lastPlaceLabel(continuePlace)}

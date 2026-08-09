@@ -309,7 +309,7 @@ export function AllFilesClient({
               <AssetCard
                 key={asset.id}
                 asset={asset}
-                layout={viewMode}
+                layout={viewMode === "list" ? "list" : "grid"}
                 spaceName={space?.name ?? null}
                 spaceColor={space?.color ?? null}
                 showSpace

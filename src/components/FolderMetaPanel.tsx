@@ -74,7 +74,7 @@ export function FolderMetaPanel({
 
   return (
     <aside
-      className="glass-content glass-appear fixed right-4 top-[68px] bottom-28 z-30 w-[min(100vw-2rem,20rem)] flex flex-col p-4 overflow-y-auto"
+      className="surface flat-fade fixed right-4 top-[68px] bottom-28 z-30 w-[min(100vw-2rem,20rem)] flex flex-col p-4 overflow-y-auto"
       style={{ borderRadius: 18 }}
     >
       <div className="flex items-start gap-2 mb-3">

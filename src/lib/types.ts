@@ -65,6 +65,7 @@ export type Asset = {
   status: string | null;
   created_at: string | null;
   tags_text?: string | null;
+  extracted_text?: string | null;
   tags?: Tag[];
   favorited?: boolean;
   locked?: boolean;

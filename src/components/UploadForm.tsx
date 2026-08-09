@@ -9,7 +9,7 @@ import {
   EntityPicker,
   type PickedEntity,
 } from "@/components/EntityPicker";
-import { GlassButton } from "@/components/glass/GlassButton";
+import { Button } from "@/components/ui/Button";
 
 type DestinationOption = {
   id: string;
@@ -282,11 +282,11 @@ export function UploadForm({
         if (!busy) onCancel();
       }}
     >
-      <div className="glass-scrim absolute inset-0 pointer-events-none" />
+      <div className="flat-scrim absolute inset-0 pointer-events-none" />
       <form
         onSubmit={(e) => void handleSubmit(e)}
         onClick={(e) => e.stopPropagation()}
-        className="modal-box max-w-md p-0 flex flex-col max-h-[min(90vh,640px)] glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+        className="modal-box max-w-md p-0 flex flex-col max-h-[min(90vh,640px)] surface flat-fade !bg-[var(--surface)] border-0 shadow-none"
         style={{ borderRadius: 22 }}
       >
         <div className="shrink-0 flex items-start gap-2 px-5 pt-5 pb-2">
@@ -329,21 +329,21 @@ export function UploadForm({
           <div className="flex flex-col gap-1.5">
             <span className="type-caption">Files</span>
             <div className="flex flex-wrap gap-2">
-              <GlassButton
-                variant="glass"
+              <Button
+                variant="secondary"
                 disabled={busy}
                 onClick={() => fileInputRef.current?.click()}
               >
                 Choose files
-              </GlassButton>
-              <GlassButton
-                variant="glass"
+              </Button>
+              <Button
+                variant="secondary"
                 disabled={busy}
                 onClick={() => folderInputRef.current?.click()}
               >
                 <IconFolderPlus size={15} stroke={1.75} />
                 Choose folder
-              </GlassButton>
+              </Button>
             </div>
             <input
               ref={fileInputRef}
@@ -461,13 +461,13 @@ export function UploadForm({
                 className="glass-input flex-1 type-body px-3 py-2 rounded-[12px] bg-white/55"
                 disabled={busy}
               />
-              <GlassButton
-                variant="glass"
+              <Button
+                variant="secondary"
                 disabled={busy || !tagDraft.trim()}
                 onClick={() => commitDraftTag()}
               >
                 Add
-              </GlassButton>
+              </Button>
             </div>
           </div>
 
@@ -520,10 +520,10 @@ export function UploadForm({
         </div>
 
         <div className="shrink-0 flex justify-end gap-2 px-5 py-4">
-          <GlassButton variant="glass" disabled={busy} onClick={onCancel}>
+          <Button variant="secondary" disabled={busy} onClick={onCancel}>
             Cancel
-          </GlassButton>
-          <GlassButton
+          </Button>
+          <Button
             variant="primary"
             type="submit"
             disabled={busy || !serverOnline || queue.length === 0}
@@ -533,7 +533,7 @@ export function UploadForm({
               : queue.length > 1
                 ? `Upload ${queue.length}`
                 : "Upload"}
-          </GlassButton>
+          </Button>
         </div>
       </form>
       <form method="dialog" className="modal-backdrop bg-transparent">

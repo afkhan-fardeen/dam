@@ -76,11 +76,11 @@ export function MoveAssetModal({
         onClose();
       }}
     >
-      <div className="glass-scrim absolute inset-0 pointer-events-none" />
+      <div className="flat-scrim absolute inset-0 pointer-events-none" />
       <form
         onSubmit={(e) => void handleSubmit(e)}
         onClick={(e) => e.stopPropagation()}
-        className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
+        className="modal-box max-w-sm surface flat-fade !bg-[var(--surface)] border-0 shadow-none"
         style={{ borderRadius: 22 }}
       >
         <div className="flex items-start gap-2 mb-3">

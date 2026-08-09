@@ -10,6 +10,9 @@ import {
   IconFolderSymlink,
   IconTrash,
   IconInfoCircle,
+  IconShare,
+  IconChevronLeft,
+  IconChevronRight,
 } from "@tabler/icons-react";
 import { getTagChipStyles } from "@/lib/categories";
 import {
@@ -26,10 +29,14 @@ import { queueAssetDownload } from "@/lib/download";
 import { EntityChip } from "@/components/EntityChip";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
 import { AttributeEditor } from "@/components/AttributeEditor";
-import { PreviewSkeleton } from "@/components/glass/GlassSkeleton";
+import { PreviewSkeleton } from "@/components/ui/Skeleton";
+import { ShareLinkModal } from "@/components/ShareLinkModal";
 
 type AssetDetailProps = {
   asset: Asset;
+  /** Sibling assets for ← → navigation */
+  assets?: Asset[];
+  onNavigateAsset?: (asset: Asset) => void;
   folders?: Folder[];
   canDownload: boolean;
   canDelete: boolean;
@@ -51,6 +58,8 @@ type AssetDetailProps = {
 
 export function AssetDetail({
   asset,
+  assets = [],
+  onNavigateAsset,
   folders = [],
   canDownload,
   canDelete,
@@ -91,6 +100,7 @@ export function AssetDetail({
 
   const [docTable, setDocTable] = useState<PreviewTable | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [docHtml, setDocHtml] = useState<string | null>(null);
   const [docLoading, setDocLoading] = useState(false);
   const [docError, setDocError] = useState<string | null>(null);
@@ -166,6 +176,31 @@ export function AssetDetail({
       cancelled = true;
     };
   }, [asset.id]);
+
+  useEffect(() => {
+    if (!onNavigateAsset || assets.length < 2) return;
+    function onKey(e: KeyboardEvent) {
+      if (showRename || showMove || confirmDelete) return;
+      const idx = assets.findIndex((a) => a.id === asset.id);
+      if (idx < 0) return;
+      if (e.key === "ArrowRight" && idx < assets.length - 1) {
+        e.preventDefault();
+        onNavigateAsset!(assets[idx + 1]!);
+      } else if (e.key === "ArrowLeft" && idx > 0) {
+        e.preventDefault();
+        onNavigateAsset!(assets[idx - 1]!);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [
+    asset.id,
+    assets,
+    onNavigateAsset,
+    showRename,
+    showMove,
+    confirmDelete,
+  ]);
 
   useEffect(() => {
     if (trashMode || !assetUrl || !docKind || docKind === "doc") return;
@@ -729,6 +764,16 @@ export function AssetDetail({
                 Download
               </button>
             )}
+            {!trashMode && canEditDetails ? (
+              <button
+                type="button"
+                onClick={() => setShareOpen(true)}
+                aria-label="Share"
+                className="dock-btn !px-2.5"
+              >
+                <IconShare size={16} />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setSidePanelOpen((v) => !v)}
@@ -758,28 +803,63 @@ export function AssetDetail({
             <div className="h-full w-full flex items-center justify-center min-h-0 overflow-hidden relative">
               {renderPreview()}
             </div>
-            {isMediaStage && canDownload && assetUrl && !trashMode ? (
+            {isMediaStage && !trashMode ? (
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
                 <div className="preview-dock">
-                  <button
-                    type="button"
-                    aria-label="Download"
-                    onClick={() => {
-                      void queueAssetDownload(
-                        asset.file_id,
-                        asset.original_name || "download",
-                        { upsertJob, removeJob },
-                      );
-                    }}
-                  >
-                    <IconDownload size={16} />
-                  </button>
+                  {onNavigateAsset && assets.length > 1 ? (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Previous"
+                        disabled={
+                          assets.findIndex((a) => a.id === asset.id) <= 0
+                        }
+                        onClick={() => {
+                          const idx = assets.findIndex((a) => a.id === asset.id);
+                          if (idx > 0) onNavigateAsset(assets[idx - 1]!);
+                        }}
+                      >
+                        <IconChevronLeft size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Next"
+                        disabled={
+                          assets.findIndex((a) => a.id === asset.id) >=
+                          assets.length - 1
+                        }
+                        onClick={() => {
+                          const idx = assets.findIndex((a) => a.id === asset.id);
+                          if (idx >= 0 && idx < assets.length - 1) {
+                            onNavigateAsset(assets[idx + 1]!);
+                          }
+                        }}
+                      >
+                        <IconChevronRight size={16} />
+                      </button>
+                    </>
+                  ) : null}
+                  {canDownload && assetUrl ? (
+                    <button
+                      type="button"
+                      aria-label="Download"
+                      onClick={() => {
+                        void queueAssetDownload(
+                          asset.file_id,
+                          asset.original_name || "download",
+                          { upsertJob, removeJob },
+                        );
+                      }}
+                    >
+                      <IconDownload size={16} />
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ) : null}
             {error && (
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20">
-                <p className="glass-content type-caption text-[#ff3b30] px-3 py-1.5 shake-error">
+                <p className="surface type-caption text-[var(--danger)] px-3 py-1.5 flat-shake">
                   {error}
                 </p>
               </div>
@@ -787,7 +867,7 @@ export function AssetDetail({
           </div>
 
           {sidePanelOpen ? (
-            <div className="absolute inset-0 z-10 sm:static sm:inset-auto sm:w-80 sm:shrink-0 glass-content !rounded-none sm:!rounded-none flex flex-col overflow-hidden border-0">
+            <div className="absolute inset-0 z-10 sm:static sm:inset-auto sm:w-80 sm:shrink-0 surface !rounded-none flex flex-col overflow-hidden border-0 border-l border-[var(--line)]">
               <div className="sm:hidden flex items-center justify-between px-4 pt-3 pb-1">
                 <p className="type-label">Details</p>
                 <button
@@ -1136,6 +1216,13 @@ export function AssetDetail({
           busy={busy}
           onClose={() => setConfirmDelete(false)}
           onConfirm={() => void confirmHandleDelete()}
+        />
+      ) : null}
+      {shareOpen ? (
+        <ShareLinkModal
+          assetId={asset.id}
+          assetName={asset.original_name || "Untitled"}
+          onClose={() => setShareOpen(false)}
         />
       ) : null}
     </>

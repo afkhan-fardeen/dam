@@ -14,7 +14,7 @@ function emptyToNull(value: string | null | undefined): string | null {
 }
 
 const ASSET_COLS =
-  "id,file_id,original_name,mime_type,size,space_id,folder_id,description,created_by,uploaded_by,has_thumbnail,status,created_at,tags_text";
+  "id,file_id,original_name,mime_type,size,space_id,folder_id,description,brand,created_by,uploaded_by,has_thumbnail,status,created_at,tags_text,extracted_text";
 
 export async function attachTags(
   supabase: SupabaseClient,

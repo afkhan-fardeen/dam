@@ -1,7 +1,7 @@
 const SIDEBAR_KEY = "dam.sidebarCollapsed";
 const VIEW_MODE_KEY = "dam.viewMode";
 
-export type ViewMode = "grid" | "list";
+export type ViewMode = "grid" | "list" | "photos";
 
 export function readSidebarCollapsed(): boolean {
   if (typeof window === "undefined") return false;
@@ -24,7 +24,8 @@ export function readViewMode(): ViewMode {
   if (typeof window === "undefined") return "grid";
   try {
     const v = window.localStorage.getItem(VIEW_MODE_KEY);
-    return v === "list" ? "list" : "grid";
+    if (v === "list" || v === "photos") return v;
+    return "grid";
   } catch {
     return "grid";
   }

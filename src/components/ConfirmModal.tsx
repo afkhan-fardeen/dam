@@ -33,10 +33,10 @@ export function ConfirmModal({
         onClose();
       }}
     >
-      <div className="glass-scrim absolute inset-0 pointer-events-none" />
+      <div className="flat-scrim absolute inset-0 pointer-events-none" />
       <div
-        className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
-        style={{ borderRadius: 22 }}
+        className="modal-box max-w-sm surface flat-fade !bg-[var(--surface)] border-0 shadow-none"
+        style={{ borderRadius: 6 }}
       >
         <div className="flex items-start gap-3 mb-3">
           <h3 className="type-title flex-1">{title}</h3>

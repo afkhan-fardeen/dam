@@ -30,12 +30,12 @@ import { useDriveChrome } from "@/components/DriveChrome";
 import { UploadProgressPanel } from "@/components/UploadProgressPanel";
 import { PasswordField } from "@/components/PasswordField";
 import { CommandBar } from "@/components/CommandBar";
-import { TopBar } from "@/components/glass/TopBar";
-import { Dock, type DockItem } from "@/components/glass/Dock";
-import { GlassDropdown } from "@/components/glass/GlassDropdown";
-import { GlassButton } from "@/components/glass/GlassButton";
-import { SearchHero } from "@/components/glass/SearchHero";
-import { navigateWithTransition } from "@/components/glass/useViewTransitionNavigate";
+import { TopBar } from "@/components/ui/TopBar";
+import { Dock, type DockItem } from "@/components/ui/Dock";
+import { Menu } from "@/components/ui/Menu";
+import { Button } from "@/components/ui/Button";
+import { SearchField } from "@/components/ui/SearchField";
+import { navigateWithTransition } from "@/components/ui/useViewTransitionNavigate";
 import { readLastPlace } from "@/lib/lastPlace";
 
 type DriveShellProps = {
@@ -354,21 +354,21 @@ export function DriveShell({
   ]);
 
   const avatarTrigger = (
-    <span className="inline-flex items-center justify-center h-8 w-8 rounded-full glass text-[11px] font-semibold text-[var(--ink)]">
+    <span className="inline-flex items-center justify-center h-8 w-8 rounded-[6px] surface text-[11px] font-semibold text-[var(--ink)]">
       {initials || <IconUser size={14} />}
     </span>
   );
 
   return (
-    <div className="min-h-screen flex flex-col relative">
+    <div className="min-h-screen flex flex-col relative bg-[var(--bg)]">
       {viewingAs ? (
-        <div className="shrink-0 glass mx-3 mt-2 px-4 py-2 flex items-center justify-between gap-3 type-body">
+        <div className="shrink-0 surface mx-3 mt-2 px-4 py-2 flex items-center justify-between gap-3 type-body">
           <span>
             Viewing as {viewingAs.full_name || viewingAs.email || "user"}
           </span>
-          <GlassButton variant="glass" onClick={() => void exitViewAs()}>
+          <Button variant="secondary" onClick={() => void exitViewAs()}>
             Exit
-          </GlassButton>
+          </Button>
         </div>
       ) : null}
 
@@ -376,7 +376,7 @@ export function DriveShell({
         brandLabel=""
         serverStatus={serverStatus}
         trailing={
-          <GlassDropdown trigger={avatarTrigger}>
+          <Menu trigger={avatarTrigger}>
             {profile.is_admin ? (
               <Link href="/admin/spaces" className="menu-row">
                 <IconSettings size={15} /> Admin
@@ -400,21 +400,20 @@ export function DriveShell({
             >
               <IconLogout size={15} /> Sign out
             </button>
-          </GlassDropdown>
+          </Menu>
         }
       />
 
       {!showHomeHero && !onEntity ? (
         <div className="px-4 sm:px-6 pb-3 max-w-3xl mx-auto w-full">
           {onSearch || onBrowse || (!onAdmin && !activeSlug) ? (
-            <SearchHero
+            <SearchField
               value={query}
               onChange={setQuery}
               onSubmit={submitSearch}
               onClear={clearSearch}
               placeholder="Search files and folders…"
               showCmdK={onSearch}
-              glow={onSearch}
               slim
             />
           ) : activeSlug ? (
@@ -433,8 +432,8 @@ export function DriveShell({
       ) : null}
 
       <main
-        className={`glass-content-root flex-1 min-w-0 ${
-          showHomeHero ? "" : "overflow-auto pb-28 px-4 sm:px-6"
+        className={`flat-content-root flex-1 min-w-0 ${
+          showHomeHero ? "" : "overflow-auto pb-20 px-4 sm:px-6"
         }`}
       >
         {children}
@@ -444,8 +443,7 @@ export function DriveShell({
 
       {dockToast ? (
         <div
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[55] glass-content glass-appear px-4 py-2.5 type-caption text-[var(--ink)] max-w-[min(90vw,20rem)] text-center shadow-lg"
-          style={{ borderRadius: 14 }}
+          className="fixed bottom-[calc(var(--dock-h)+12px)] left-1/2 -translate-x-1/2 z-[55] surface flat-fade px-4 py-2.5 type-caption text-[var(--ink)] max-w-[min(90vw,20rem)] text-center"
           role="status"
         >
           {dockToast}
@@ -492,13 +490,13 @@ export function DriveShell({
             setPasswordOpen(false);
           }}
         >
-          <div className="glass-scrim absolute inset-0 pointer-events-none" />
+          <div className="flat-scrim absolute inset-0 pointer-events-none" />
           <form
             method="dialog"
             onClick={(e) => e.stopPropagation()}
             onSubmit={changePassword}
-            className="modal-box glass-content glass-appear flex flex-col gap-3 !bg-[var(--content-glass)] border-0 shadow-none"
-            style={{ borderRadius: 22 }}
+            className="modal-box surface flat-fade flex flex-col gap-3 !bg-[var(--surface)] !border ![border-color:var(--line)] shadow-none"
+            style={{ borderRadius: 6 }}
           >
             <div className="flex items-center gap-2">
               <h2 className="type-title flex-1">Change password</h2>
@@ -523,15 +521,15 @@ export function DriveShell({
               <p className="type-caption">{passwordMsg}</p>
             ) : null}
             <div className="flex justify-end gap-2 mt-2">
-              <GlassButton
-                variant="glass"
+              <Button
+                variant="secondary"
                 onClick={() => setPasswordOpen(false)}
               >
                 Cancel
-              </GlassButton>
-              <GlassButton variant="primary" type="submit">
+              </Button>
+              <Button variant="primary" type="submit">
                 Save
-              </GlassButton>
+              </Button>
             </div>
           </form>
           <form method="dialog" className="modal-backdrop bg-transparent">

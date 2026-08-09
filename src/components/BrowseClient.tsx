@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
+import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { lastPlaceHref, readLastPlace } from "@/lib/lastPlace";
 import type { Space } from "@/lib/types";
 
@@ -28,10 +29,7 @@ export function BrowseClient({ spaces }: BrowseClientProps) {
   if (!ready) {
     return (
       <div className="flex flex-col gap-5 w-full max-w-2xl mx-auto pb-8 pt-2">
-        <div className="glass-content p-6">
-          <div className="glass-shimmer h-3 w-1/3 mb-3" />
-          <div className="glass-shimmer h-3 w-2/3" />
-        </div>
+        <Skeleton rows={2} />
       </div>
     );
   }
@@ -44,18 +42,17 @@ export function BrowseClient({ spaces }: BrowseClientProps) {
       </div>
 
       {spaces.length === 0 ? (
-        <div className="glass-content p-8 text-center">
-          <p className="type-body text-[var(--ink-soft)]">
-            No places to browse yet. Ask an admin for access.
-          </p>
+        <div className="surface empty-state">
+          <p className="type-title">No places yet</p>
+          <p className="type-caption mt-2">Ask an admin for access.</p>
         </div>
       ) : (
-        <ul className="glass-content p-2 flex flex-col gap-0.5">
+        <ul className="surface overflow-hidden p-0 flex flex-col">
           {spaces.map((s) => (
             <li key={s.id}>
               <button
                 type="button"
-                className="card-row w-full text-left"
+                className="card-row"
                 onClick={() => navigate(`/s/${s.slug}`)}
               >
                 <span
@@ -63,9 +60,7 @@ export function BrowseClient({ spaces }: BrowseClientProps) {
                   style={{ backgroundColor: s.color }}
                   aria-hidden
                 />
-                <span className="flex-1 truncate type-body text-[var(--ink)]">
-                  {s.name}
-                </span>
+                <span className="flex-1 truncate type-body">{s.name}</span>
                 <span className="type-caption capitalize">
                   {s.kind === "brand"
                     ? "Brand"

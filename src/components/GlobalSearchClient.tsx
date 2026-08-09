@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { IconFilter, IconFolder } from "@tabler/icons-react";
 import { AssetCard } from "@/components/AssetCard";
-import { GlassDropdown } from "@/components/glass/GlassDropdown";
-import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
-import { useViewTransitionNavigate } from "@/components/glass/useViewTransitionNavigate";
+import { Menu } from "@/components/ui/Menu";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
+import { assetMatchReason, isImageMime } from "@/lib/matchReason";
 import type { FolderSearchHit } from "@/lib/search";
 import type { Asset, Space } from "@/lib/types";
 
@@ -70,6 +71,15 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     return folders.filter((f) => f.space_id === spaceFilter);
   }, [folders, spaceFilter]);
 
+  const images = useMemo(
+    () => filteredAssets.filter((a) => isImageMime(a.mime_type)),
+    [filteredAssets],
+  );
+  const files = useMemo(
+    () => filteredAssets.filter((a) => !isImageMime(a.mime_type)),
+    [filteredAssets],
+  );
+
   function openAsset(asset: Asset) {
     const space = asset.space_id ? spaceById.get(asset.space_id) : null;
     if (!space) return;
@@ -94,22 +104,69 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     navigate(`/search?${params.toString()}`);
   }
 
+  function AssetSection({
+    title,
+    items,
+  }: {
+    title: string;
+    items: Asset[];
+  }) {
+    if (items.length === 0) return null;
+    return (
+      <section className="surface p-4 flex flex-col gap-3">
+        <h2 className="type-label px-1">
+          {title}{" "}
+          <span className="text-[var(--ink-faint)] font-normal normal-case tracking-normal">
+            ({items.length})
+          </span>
+        </h2>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
+          {items.map((asset) => {
+            const space = asset.space_id
+              ? spaceById.get(asset.space_id)
+              : null;
+            return (
+              <div key={asset.id} className="relative">
+                <AssetCard
+                  asset={asset}
+                  locked={Boolean(asset.locked)}
+                  spaceName={space?.name ?? null}
+                  spaceColor={space?.color ?? null}
+                  showSpace
+                  thumbnailUrl={
+                    !asset.locked && asset.has_thumbnail
+                      ? `/api/media/thumbnail/${encodeURIComponent(asset.file_id)}`
+                      : null
+                  }
+                  onClick={() => openAsset(asset)}
+                />
+                <span className="match-chip absolute top-2 left-2 z-10 bg-[var(--surface)]">
+                  {assetMatchReason(q, asset)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-5 w-full max-w-4xl mx-auto pb-8">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="type-page">Search results</h1>
+          <h1 className="type-page">Search</h1>
           <p className="type-caption mt-1">
             {q.trim()
               ? loading
                 ? `Searching for “${q.trim()}”…`
-                : `${filteredFolders.length} folder${filteredFolders.length === 1 ? "" : "s"} · ${filteredAssets.length} file${filteredAssets.length === 1 ? "" : "s"}`
+                : `${filteredFolders.length} folders · ${images.length} images · ${files.length} files`
               : "Type above to search everything."}
           </p>
         </div>
-        <GlassDropdown
+        <Menu
           trigger={
-            <span className="dock-btn">
+            <span className="btn-flat inline-flex items-center gap-1.5 px-3 h-9 text-[13px]">
               <IconFilter size={15} stroke={1.75} />
               Filters
               {spaceFilter ? (
@@ -119,19 +176,19 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
           }
           widthClass="w-[220px]"
         >
-          <p className="card-label px-2.5 pt-1 pb-1">Filter</p>
+          <p className="type-label px-2.5 pt-1 pb-1">Place</p>
           <button
             type="button"
-            className="card-row"
+            className="menu-row"
             onClick={() => setSpaceFilter("")}
           >
-            All files
+            All places
           </button>
           {spaces.map((s) => (
             <button
               key={s.id}
               type="button"
-              className="card-row"
+              className="menu-row"
               onClick={() => setSpaceFilter(s.id)}
             >
               <span
@@ -144,19 +201,22 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
               ) : null}
             </button>
           ))}
-        </GlassDropdown>
+        </Menu>
       </div>
 
-      {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
+      {error ? (
+        <p className="type-caption text-[var(--danger)]">{error}</p>
+      ) : null}
 
-      {loading ? <GlassSkeleton rows={4} className="mt-2" /> : null}
+      {loading ? <Skeleton rows={4} className="mt-2" /> : null}
 
       {!loading &&
       q.trim() &&
       filteredAssets.length === 0 &&
       filteredFolders.length === 0 ? (
-        <div className="glass-content p-8 text-center">
-          <p className="type-body text-[var(--ink-soft)]">
+        <div className="surface empty-state">
+          <p className="type-title">No results</p>
+          <p className="type-caption mt-2">
             Nothing matched “{q.trim()}”. Try a folder name, file title, or tag.
           </p>
         </div>
@@ -165,9 +225,9 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
       {!loading ? (
         <div className="search-results-stagger flex flex-col gap-5">
           {filteredFolders.length > 0 ? (
-            <section className="glass-content p-4 flex flex-col gap-2">
-              <h2 className="card-label px-1">Folders</h2>
-              <div className="flex flex-col gap-0.5">
+            <section className="surface overflow-hidden">
+              <h2 className="type-label px-4 pt-4 pb-2">Folders</h2>
+              <div className="flex flex-col">
                 {filteredFolders.map((f) => (
                   <button
                     key={f.id}
@@ -186,47 +246,24 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
                         backgroundColor:
                           f.space_color ||
                           spaceById.get(f.space_id)?.color ||
-                          "#a1a1a6",
+                          "#8e8e93",
                       }}
                     />
-                    <span className="flex-1 truncate text-left">{f.name}</span>
+                    <span className="flex-1 truncate text-left type-body">
+                      {f.name}
+                    </span>
                     <span className="type-caption truncate max-w-[8rem]">
                       {f.space_name || spaceById.get(f.space_id)?.name || ""}
                     </span>
+                    <span className="match-chip">Folder name</span>
                   </button>
                 ))}
               </div>
             </section>
           ) : null}
 
-          {filteredAssets.length > 0 ? (
-            <section className="glass-content p-4 flex flex-col gap-3">
-              <h2 className="card-label px-1">Files</h2>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
-                {filteredAssets.map((asset) => {
-                  const space = asset.space_id
-                    ? spaceById.get(asset.space_id)
-                    : null;
-                  return (
-                    <AssetCard
-                      key={asset.id}
-                      asset={asset}
-                      locked={Boolean(asset.locked)}
-                      spaceName={space?.name ?? null}
-                      spaceColor={space?.color ?? null}
-                      showSpace
-                      thumbnailUrl={
-                        !asset.locked && asset.has_thumbnail
-                          ? `/api/media/thumbnail/${encodeURIComponent(asset.file_id)}`
-                          : null
-                      }
-                      onClick={() => openAsset(asset)}
-                    />
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
+          <AssetSection title="Images" items={images} />
+          <AssetSection title="Files" items={files} />
         </div>
       ) : null}
     </div>

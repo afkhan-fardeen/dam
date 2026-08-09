@@ -59,7 +59,7 @@ type AssetCardProps = {
   locked?: boolean;
   spaceName?: string | null;
   spaceColor?: string | null;
-  layout?: "grid" | "list";
+  layout?: "grid" | "list" | "photos";
   /** Show space name column/chip (All files / search). */
   showSpace?: boolean;
   /** Show tags on the card (off by default — use page toggle). */

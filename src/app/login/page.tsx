@@ -87,13 +87,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6">
+    <div className="min-h-screen flex items-center justify-center px-6 bg-[var(--bg)]">
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="glass-strong glass-appear w-full max-w-[360px] p-7 flex flex-col gap-5"
-        style={{ borderRadius: 20 }}
+        className="surface flat-fade w-full max-w-[360px] p-7 flex flex-col gap-5"
       >
         <h1 className="type-page text-center">Assets</h1>
+        <p className="type-caption text-center -mt-3">Sign in to continue</p>
 
         <label className="flex flex-col gap-1.5">
           <span className="type-caption">Email</span>
@@ -103,7 +103,7 @@ export default function LoginPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="glass-input type-body py-2"
+            className="flat-input type-body"
             autoComplete="email"
             inputMode="email"
             autoCapitalize="none"
@@ -122,12 +122,14 @@ export default function LoginPage() {
           autoComplete="current-password"
         />
 
-        {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
+        {error ? (
+          <p className="type-caption text-[var(--danger)] flat-shake">{error}</p>
+        ) : null}
 
         <button
           type="submit"
           disabled={busy}
-          className="btn-glass-primary w-full py-2.5 text-[14px] font-medium disabled:opacity-50"
+          className="btn-flat-primary w-full h-9 text-[14px] font-semibold disabled:opacity-40"
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>

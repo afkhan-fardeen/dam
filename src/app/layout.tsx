@@ -4,7 +4,7 @@ import "./globals.css";
 
 const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
   variable: "--font-inter",
   display: "swap",
 });
@@ -21,8 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} h-full`}>
-      <body className="min-h-full antialiased text-[var(--ink)]">
-        <div className="glass-wash" aria-hidden />
+      <body className="min-h-full antialiased text-[var(--ink)] bg-[var(--bg)]">
         {children}
       </body>
     </html>
