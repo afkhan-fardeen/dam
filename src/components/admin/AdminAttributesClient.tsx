@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AdminTabs } from "@/components/admin/AdminTabs";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import type { AttributeDef } from "@/lib/types";
 

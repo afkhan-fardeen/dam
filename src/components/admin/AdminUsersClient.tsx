@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Space, SpaceMembership, SpaceRole, Profile } from "@/lib/types";
 import { AdminTabs } from "@/components/admin/AdminTabs";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { ConfirmModal } from "@/components/ConfirmModal";
+import { Button } from "@/components/ui/Button";
 import { PasswordField } from "@/components/PasswordField";
 
 function generatePassword() {
@@ -19,19 +21,30 @@ function generatePassword() {
 
 type PendingRow = { key: string; space_id: string; role: SpaceRole };
 
+const ROLE_OPTIONS: { value: SpaceRole; label: string }[] = [
+  { value: "viewer", label: "Viewer" },
+  { value: "downloader", label: "Downloader" },
+  { value: "editor", label: "Editor" },
+];
+
 export function AdminUsersClient() {
   const router = useRouter();
   const [users, setUsers] = useState<Profile[]>([]);
   const [memberships, setMemberships] = useState<SpaceMembership[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
+  const [meId, setMeId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Profile | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
   const [resetUser, setResetUser] = useState<Profile | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [resetShown, setResetShown] = useState(false);
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isActive, setIsActive] = useState(true);
   const [rows, setRows] = useState<PendingRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [createdCreds, setCreatedCreds] = useState<{
@@ -50,6 +63,7 @@ export function AdminUsersClient() {
     if (usersRes.ok) {
       setUsers(usersJson.users as Profile[]);
       setMemberships(usersJson.memberships as SpaceMembership[]);
+      setMeId((usersJson.me as string | null) ?? null);
     }
     if (spacesRes.ok) setSpaces(spacesJson.spaces as Space[]);
   }, []);
@@ -68,10 +82,23 @@ export function AdminUsersClient() {
     );
   }, [users, query]);
 
-  function openModal() {
+  function membershipRowsFor(userId: string): PendingRow[] {
+    return memberships
+      .filter((m) => m.user_id === userId)
+      .map((m) => ({
+        key: m.id,
+        space_id: m.space_id,
+        role: m.role,
+      }));
+  }
+
+  function openCreate() {
+    setEditing(null);
     setEmail("");
     setFullName("");
     setPassword(generatePassword());
+    setIsAdmin(false);
+    setIsActive(true);
     setError(null);
     setCreatedCreds(null);
     const first = spaces[0];
@@ -80,6 +107,19 @@ export function AdminUsersClient() {
         ? [{ key: crypto.randomUUID(), space_id: first.id, role: "viewer" }]
         : [],
     );
+    setModalOpen(true);
+  }
+
+  function openEdit(user: Profile) {
+    setEditing(user);
+    setEmail(user.email || "");
+    setFullName(user.full_name || "");
+    setPassword("");
+    setIsAdmin(Boolean(user.is_admin));
+    setIsActive(user.is_active !== false);
+    setError(null);
+    setCreatedCreds(null);
+    setRows(membershipRowsFor(user.id));
     setModalOpen(true);
   }
 
@@ -118,6 +158,42 @@ export function AdminUsersClient() {
     await load();
   }
 
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    setBusy(true);
+    setError(null);
+
+    const existing = memberships.filter((m) => m.user_id === editing.id);
+    const nextSpaceIds = new Set(rows.map((r) => r.space_id));
+    const remove_space_ids = existing
+      .filter((m) => !nextSpaceIds.has(m.space_id))
+      .map((m) => m.space_id);
+
+    const res = await fetch("/api/admin/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: editing.id,
+        full_name: fullName,
+        email,
+        is_admin: isAdmin,
+        is_active: isActive,
+        memberships: rows.map(({ space_id, role }) => ({ space_id, role })),
+        remove_space_ids,
+      }),
+    });
+    const json = await res.json();
+    setBusy(false);
+    if (!res.ok) {
+      setError(json.error || "Could not save changes.");
+      return;
+    }
+    setModalOpen(false);
+    setEditing(null);
+    await load();
+  }
+
   async function submitReset(e: React.FormEvent) {
     e.preventDefault();
     if (!resetUser) return;
@@ -140,36 +216,27 @@ export function AdminUsersClient() {
     setResetShown(true);
   }
 
-  async function changeRole(userId: string, spaceId: string, role: SpaceRole) {
-    await fetch("/api/admin/users", {
-      method: "PATCH",
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setBusy(true);
+    setError(null);
+    const res = await fetch("/api/admin/users", {
+      method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_id: userId,
-        memberships: [{ space_id: spaceId, role }],
-      }),
+      body: JSON.stringify({ user_id: deleteTarget.id }),
     });
-    await load();
-  }
-
-  async function removeMembership(userId: string, spaceId: string) {
-    await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_id: userId,
-        remove_space_ids: [spaceId],
-      }),
-    });
-    await load();
-  }
-
-  async function toggleActive(userId: string, isActive: boolean) {
-    await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: userId, is_active: isActive }),
-    });
+    const json = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setError(json.error || "Could not delete this person.");
+      setDeleteTarget(null);
+      return;
+    }
+    if (editing?.id === deleteTarget.id) {
+      setModalOpen(false);
+      setEditing(null);
+    }
+    setDeleteTarget(null);
     await load();
   }
 
@@ -186,6 +253,8 @@ export function AdminUsersClient() {
   const spaceColor = (id: string) =>
     spaces.find((b) => b.id === id)?.color || "#6b7280";
 
+  const isSelf = Boolean(editing && meId && editing.id === meId);
+
   return (
     <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
       <AdminTabs />
@@ -197,15 +266,20 @@ export function AdminUsersClient() {
           placeholder="Search people…"
           className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 max-w-xs"
         />
-        <button type="button" onClick={openModal} className="btn-glass-primary px-4 py-2 text-[13px] font-medium">
+        <Button variant="primary" type="button" onClick={openCreate}>
           New person
-        </button>
+        </Button>
       </div>
+
+      {error && !modalOpen && !resetUser && !deleteTarget ? (
+        <p className="type-caption text-[#ff3b30]">{error}</p>
+      ) : null}
 
       <div className="flex flex-col gap-0.5">
         {filtered.map((u) => {
           const userMemberships = memberships.filter((m) => m.user_id === u.id);
           const inactive = u.is_active === false;
+          const self = meId === u.id;
           return (
             <div
               key={u.id}
@@ -214,14 +288,25 @@ export function AdminUsersClient() {
               }`}
             >
               <div className="flex flex-wrap items-center gap-2">
-                <p className="type-label">
-                  {u.full_name || "Unnamed"}
-                </p>
+                <p className="type-label">{u.full_name || "Unnamed"}</p>
                 <p className="type-caption text-[var(--ink-soft)]">{u.email}</p>
                 {u.is_admin ? (
                   <span className="badge badge-neutral badge-sm">Admin</span>
                 ) : null}
+                {inactive ? (
+                  <span className="badge badge-ghost badge-sm">Inactive</span>
+                ) : null}
+                {self ? (
+                  <span className="badge badge-ghost badge-sm">You</span>
+                ) : null}
                 <div className="ml-auto flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => openEdit(u)}
+                  >
+                    Edit
+                  </button>
                   {!u.is_admin ? (
                     <button
                       type="button"
@@ -243,51 +328,41 @@ export function AdminUsersClient() {
                   >
                     Reset password
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs"
-                    onClick={() => void toggleActive(u.id, inactive)}
-                  >
-                    {inactive ? "Reactivate" : "Deactivate"}
-                  </button>
+                  {!self ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs text-[#ff3b30]"
+                      onClick={() => {
+                        setError(null);
+                        setDeleteTarget(u);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {userMemberships.map((m) => (
-                  <span
-                    key={m.id}
-                    className="badge badge-ghost gap-1.5"
-                    style={{
-                      color: spaceColor(m.space_id),
-                      backgroundColor: `${spaceColor(m.space_id)}18`,
-                    }}
-                  >
-                    {spaceName(m.space_id)} ·
-                    <select
-                      value={m.role}
-                      onChange={(e) =>
-                        void changeRole(
-                          u.id,
-                          m.space_id,
-                          e.target.value as SpaceRole,
-                        )
-                      }
-                      className="bg-transparent text-xs outline-none"
-                      style={{ color: spaceColor(m.space_id) }}
-                    >
-                      <option value="viewer">Viewer</option>
-                      <option value="downloader">Downloader</option>
-                      <option value="editor">Editor</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => void removeMembership(u.id, m.space_id)}
-                      aria-label="Remove"
-                    >
-                      ×
-                    </button>
+                {userMemberships.length === 0 ? (
+                  <span className="type-caption text-[var(--ink-soft)]">
+                    {u.is_admin ? "Full admin access" : "No place access"}
                   </span>
-                ))}
+                ) : (
+                  userMemberships.map((m) => (
+                    <span
+                      key={m.id}
+                      className="badge badge-ghost gap-1"
+                      style={{
+                        color: spaceColor(m.space_id),
+                        backgroundColor: `${spaceColor(m.space_id)}18`,
+                      }}
+                    >
+                      {spaceName(m.space_id)} ·{" "}
+                      {ROLE_OPTIONS.find((r) => r.value === m.role)?.label ||
+                        m.role}
+                    </span>
+                  ))
+                )}
               </div>
             </div>
           );
@@ -296,38 +371,67 @@ export function AdminUsersClient() {
 
       {modalOpen ? (
         <AdminModal
-          title="New person"
+          title={editing ? "Edit person" : "New person"}
           size="lg"
-          onClose={() => setModalOpen(false)}
+          onClose={() => {
+            if (busy) return;
+            setModalOpen(false);
+            setEditing(null);
+            setCreatedCreds(null);
+          }}
           footer={
             createdCreds ? (
-              <button
+              <Button
+                variant="primary"
                 type="button"
-                className="btn btn-primary"
                 onClick={() => {
                   setModalOpen(false);
                   setCreatedCreds(null);
                 }}
               >
                 Done
-              </button>
+              </Button>
             ) : (
               <>
-                <button
+                {editing && !isSelf ? (
+                  <Button
+                    variant="destructive"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setError(null);
+                      setDeleteTarget(editing);
+                    }}
+                  >
+                    Delete permanently
+                  </Button>
+                ) : null}
+                <div className="flex-1" />
+                <Button
+                  variant="secondary"
                   type="button"
-                  className="btn btn-ghost"
-                  onClick={() => setModalOpen(false)}
+                  disabled={busy}
+                  onClick={() => {
+                    setModalOpen(false);
+                    setEditing(null);
+                  }}
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
                   type="submit"
-                  form="create-user-form"
+                  form={editing ? "edit-user-form" : "create-user-form"}
                   disabled={busy}
-                  className="btn btn-primary"
                 >
-                  {busy ? "Creating…" : "Create person"}
-                </button>
+                  {busy
+                    ? editing
+                      ? "Saving…"
+                      : "Creating…"
+                    : editing
+                      ? "Save changes"
+                      : "Create person"}
+                </Button>
               </>
             )
           }
@@ -344,12 +448,12 @@ export function AdminUsersClient() {
             </div>
           ) : (
             <form
-              id="create-user-form"
-              onSubmit={(e) => void createUser(e)}
+              id={editing ? "edit-user-form" : "create-user-form"}
+              onSubmit={(e) => void (editing ? saveEdit(e) : createUser(e))}
               className="flex flex-col gap-5"
             >
               <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
+                <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                   Full name
                 </legend>
                 <input
@@ -360,7 +464,7 @@ export function AdminUsersClient() {
                 />
               </fieldset>
               <fieldset className="fieldset w-full">
-              <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
+                <legend className="fieldset-legend text-xs text-[var(--ink-soft)] py-0">
                   Email
                 </legend>
                 <input
@@ -371,28 +475,63 @@ export function AdminUsersClient() {
                   className="input input-bordered w-full"
                 />
               </fieldset>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="type-caption text-[var(--ink-soft)]">Password</span>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-xs"
-                    onClick={() => setPassword(generatePassword())}
-                  >
-                    Generate
-                  </button>
+
+              {!editing ? (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="type-caption text-[var(--ink-soft)]">
+                      Password
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => setPassword(generatePassword())}
+                    >
+                      Generate
+                    </button>
+                  </div>
+                  <PasswordField
+                    value={password}
+                    onChange={setPassword}
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                  />
                 </div>
-                <PasswordField
-                  value={password}
-                  onChange={setPassword}
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                />
-              </div>
+              ) : (
+                <div className="flex flex-col gap-3 rounded-xl bg-white/35 px-3 py-3">
+                  <label className="flex items-center justify-between gap-3 cursor-pointer">
+                    <span className="type-body">Admin</span>
+                    <input
+                      type="checkbox"
+                      className="toggle toggle-sm"
+                      checked={isAdmin}
+                      disabled={isSelf}
+                      onChange={(e) => setIsAdmin(e.target.checked)}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-3 cursor-pointer">
+                    <span className="type-body">Active</span>
+                    <input
+                      type="checkbox"
+                      className="toggle toggle-sm"
+                      checked={isActive}
+                      disabled={isSelf}
+                      onChange={(e) => setIsActive(e.target.checked)}
+                    />
+                  </label>
+                  {isSelf ? (
+                    <p className="type-caption text-[var(--ink-soft)]">
+                      You can’t change your own admin/active status here.
+                    </p>
+                  ) : null}
+                </div>
+              )}
 
               <div className="flex flex-col gap-2">
-                <p className="type-caption text-[var(--ink-soft)]">Space access</p>
+                <p className="type-caption text-[var(--ink-soft)]">
+                  Place access
+                </p>
                 {rows.map((row) => (
                   <div
                     key={row.key}
@@ -434,14 +573,18 @@ export function AdminUsersClient() {
                       }
                       className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 w-full"
                     >
-                      <option value="viewer">Viewer</option>
-                      <option value="downloader">Downloader</option>
-                      <option value="editor">Editor</option>
+                      {ROLE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
                     </select>
                     <button
                       type="button"
                       onClick={() =>
-                        setRows((prev) => prev.filter((r) => r.key !== row.key))
+                        setRows((prev) =>
+                          prev.filter((r) => r.key !== row.key),
+                        )
                       }
                       className="btn btn-ghost btn-xs btn-circle"
                       aria-label="Remove"
@@ -456,11 +599,13 @@ export function AdminUsersClient() {
                     onClick={addRow}
                     className="btn btn-ghost btn-sm self-start"
                   >
-                    + Add another
+                    + Add place
                   </button>
                 ) : null}
               </div>
-              {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
+              {error ? (
+                <p className="type-caption text-[#ff3b30]">{error}</p>
+              ) : null}
             </form>
           )}
         </AdminModal>
@@ -472,30 +617,30 @@ export function AdminUsersClient() {
           onClose={() => setResetUser(null)}
           footer={
             resetShown ? (
-              <button
+              <Button
+                variant="primary"
                 type="button"
-                className="btn btn-primary"
                 onClick={() => setResetUser(null)}
               >
                 Done
-              </button>
+              </Button>
             ) : (
               <>
-                <button
+                <Button
+                  variant="secondary"
                   type="button"
-                  className="btn btn-ghost"
                   onClick={() => setResetUser(null)}
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="primary"
                   type="submit"
                   form="reset-pw-form"
                   disabled={busy}
-                  className="btn btn-primary"
                 >
                   {busy ? "Saving…" : "Reset"}
-                </button>
+                </Button>
               </>
             )
           }
@@ -503,9 +648,7 @@ export function AdminUsersClient() {
           {resetShown ? (
             <div className="flex flex-col gap-2 py-2">
               <p className="type-body">New password for {resetUser.email}:</p>
-              <p className="type-label tracking-wide">
-                {resetPassword}
-              </p>
+              <p className="type-label tracking-wide">{resetPassword}</p>
             </div>
           ) : (
             <form
@@ -518,7 +661,9 @@ export function AdminUsersClient() {
               </p>
               <div className="flex flex-col gap-1">
                 <div className="flex justify-between">
-                  <span className="type-caption text-[var(--ink-soft)]">Password</span>
+                  <span className="type-caption text-[var(--ink-soft)]">
+                    Password
+                  </span>
                   <button
                     type="button"
                     className="btn btn-ghost btn-xs"
@@ -535,10 +680,26 @@ export function AdminUsersClient() {
                   autoComplete="new-password"
                 />
               </div>
-              {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
+              {error ? (
+                <p className="type-caption text-[#ff3b30]">{error}</p>
+              ) : null}
             </form>
           )}
         </AdminModal>
+      ) : null}
+
+      {deleteTarget ? (
+        <ConfirmModal
+          title="Delete permanently?"
+          message={`This permanently removes ${
+            deleteTarget.full_name || deleteTarget.email || "this person"
+          } and their login. Place memberships are cleared. Uploaded files stay. This cannot be undone.`}
+          confirmLabel="Delete permanently"
+          danger
+          busy={busy}
+          onConfirm={() => void confirmDelete()}
+          onClose={() => setDeleteTarget(null)}
+        />
       ) : null}
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   IconStar,
   IconStarFilled,
@@ -13,6 +14,7 @@ import {
   IconShare,
   IconChevronLeft,
   IconChevronRight,
+  IconPhoto,
 } from "@tabler/icons-react";
 import { getTagChipStyles } from "@/lib/categories";
 import {
@@ -31,6 +33,11 @@ import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
 import { AttributeEditor } from "@/components/AttributeEditor";
 import { PreviewSkeleton } from "@/components/ui/Skeleton";
 import { ShareLinkModal } from "@/components/ShareLinkModal";
+import {
+  getCachedEntities,
+  prefetchMediaUrls,
+  setCachedEntities,
+} from "@/lib/previewCache";
 
 type AssetDetailProps = {
   asset: Asset;
@@ -79,8 +86,12 @@ export function AssetDetail({
   onFavoriteChange,
 }: AssetDetailProps) {
   const { upsertJob, removeJob } = useDriveChrome();
+  const [mounted, setMounted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [preferFullQuality, setPreferFullQuality] = useState(false);
+  const [imageSrc, setImageSrc] = useState<string>("");
+  const [imageUpgrading, setImageUpgrading] = useState(false);
   const [sidePanelOpen, setSidePanelOpen] = useState(initialPanelOpen);
   const [showMove, setShowMove] = useState(initialShowMove);
   const [showRename, setShowRename] = useState(false);
@@ -105,6 +116,26 @@ export function AssetDetail({
   const [docLoading, setDocLoading] = useState(false);
   const [docError, setDocError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (shareOpen || confirmDelete) return;
+        onClose();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose, shareOpen, confirmDelete]);
+
   const docKind = detectDocPreviewKind(asset.mime_type, asset.original_name);
   const mime = asset.mime_type || "";
   const isImage = mime.startsWith("image/");
@@ -120,6 +151,64 @@ export function AssetDetail({
     ? `/api/media/thumbnail/${encodeURIComponent(asset.file_id)}`
     : null;
 
+  useEffect(() => {
+    try {
+      setPreferFullQuality(sessionStorage.getItem("dam-preview-full-quality") === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Thumb first, then decode original and swap (or force original when preferred).
+  useEffect(() => {
+    if (!isImage) {
+      setImageSrc("");
+      setImageUpgrading(false);
+      return;
+    }
+    const full = assetUrl;
+    const thumb = thumbUrl;
+    const start =
+      preferFullQuality && full ? full : thumb || full || "";
+    setImageSrc(start);
+    setImageUpgrading(Boolean(full && thumb && !preferFullQuality && start === thumb));
+
+    if (!full || preferFullQuality || !thumb || start === full) {
+      setImageUpgrading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const img = new window.Image();
+    img.decoding = "async";
+    img.onload = () => {
+      if (cancelled) return;
+      setImageSrc(full);
+      setImageUpgrading(false);
+    };
+    img.onerror = () => {
+      if (!cancelled) setImageUpgrading(false);
+    };
+    img.src = full;
+    return () => {
+      cancelled = true;
+    };
+  }, [asset.id, isImage, assetUrl, thumbUrl, preferFullQuality]);
+
+  function toggleFullQuality() {
+    const next = !preferFullQuality;
+    setPreferFullQuality(next);
+    try {
+      sessionStorage.setItem("dam-preview-full-quality", next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+    if (next && assetUrl) {
+      setImageSrc(assetUrl);
+      setImageUpgrading(false);
+    }
+  }
+
   const isDirty =
     canEditDetails &&
     (editDescription !== (asset.description || "") ||
@@ -127,9 +216,9 @@ export function AssetDetail({
       addedTagNames.length > 0 ||
       removedTagIds.length > 0);
 
+  // Soft-sync when flipping next/prev — keep the lightbox mounted.
   useEffect(() => {
     setError(null);
-    setShowMove(false);
     setShowRename(false);
     setMoveFolderId(asset.folder_id);
     setRenameValue(asset.original_name || "");
@@ -140,33 +229,39 @@ export function AssetDetail({
     setTagDraft("");
     setRemovedTagIds([]);
     setAddedTagNames([]);
-    setLinkedEntities([]);
     setEntityPickerOpen(false);
     setDocTable(null);
     setDocHtml(null);
     setDocError(null);
-  }, [
-    asset.file_id,
-    asset.folder_id,
-    asset.original_name,
-    asset.favorited,
-    asset.description,
-    asset.created_by,
-    asset.tags,
-  ]);
+    if (initialShowMove) setShowMove(true);
+    else setShowMove(false);
+    const cached = getCachedEntities(asset.id);
+    setLinkedEntities(
+      (cached as (Entity & { relation_label?: string | null })[]) ?? [],
+    );
+  }, [asset.id, asset.file_id, asset.folder_id, asset.original_name, asset.favorited, asset.description, asset.created_by, asset.tags, initialShowMove]);
 
+  // Side-panel data only — don't block the preview stage.
   useEffect(() => {
+    if (!sidePanelOpen) return;
+    const cached = getCachedEntities(asset.id);
+    if (cached) {
+      setLinkedEntities(
+        cached as (Entity & { relation_label?: string | null })[],
+      );
+      return;
+    }
     let cancelled = false;
     void (async () => {
       try {
         const res = await fetch(`/api/assets/${asset.id}/entities`);
         const json = await res.json();
         if (!cancelled && res.ok) {
-          setLinkedEntities(
-            (json.entities ?? []) as (Entity & {
-              relation_label?: string | null;
-            })[],
-          );
+          const rows = (json.entities ?? []) as (Entity & {
+            relation_label?: string | null;
+          })[];
+          setCachedEntities(asset.id, rows);
+          setLinkedEntities(rows);
         }
       } catch {
         /* ignore */
@@ -175,7 +270,26 @@ export function AssetDetail({
     return () => {
       cancelled = true;
     };
-  }, [asset.id]);
+  }, [asset.id, sidePanelOpen]);
+
+  // Prefetch neighbors so next/prev feels instant.
+  useEffect(() => {
+    if (!onNavigateAsset || assets.length < 2) return;
+    const idx = assets.findIndex((a) => a.id === asset.id);
+    if (idx < 0) return;
+    const neighbors = [assets[idx - 1], assets[idx + 1]].filter(
+      Boolean,
+    ) as Asset[];
+    prefetchMediaUrls(
+      neighbors.map((a) =>
+        a.has_thumbnail
+          ? `/api/media/thumbnail/${encodeURIComponent(a.file_id)}`
+          : a.mime_type?.startsWith("image/")
+            ? `/api/media/asset/${encodeURIComponent(a.file_id)}`
+            : null,
+      ),
+    );
+  }, [asset.id, assets, onNavigateAsset]);
 
   useEffect(() => {
     if (!onNavigateAsset || assets.length < 2) return;
@@ -579,10 +693,12 @@ export function AssetDetail({
     if (isVideo && assetUrl) {
       return (
         <video
+          key={asset.file_id}
           controls
           className="max-h-full max-w-full object-contain"
           src={assetUrl}
           poster={thumbUrl || undefined}
+          preload="metadata"
           onError={() => setError("Could not load the video preview.")}
         />
       );
@@ -590,6 +706,7 @@ export function AssetDetail({
     if (isPdf && assetUrl) {
       return (
         <iframe
+          key={asset.file_id}
           title={asset.original_name || "PDF"}
           src={assetUrl}
           className="h-full w-full bg-[#1c1c1e]"
@@ -597,13 +714,26 @@ export function AssetDetail({
       );
     }
     if (isImage && (assetUrl || thumbUrl)) {
+      const previewSrc = imageSrc || thumbUrl || assetUrl || "";
       return (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={assetUrl || thumbUrl || ""}
+          key={asset.file_id}
+          src={previewSrc}
           alt=""
+          decoding="async"
           className="max-h-full max-w-full object-contain"
-          onError={() => setError("Could not load the preview for this file.")}
+          onError={(e) => {
+            if (
+              thumbUrl &&
+              assetUrl &&
+              e.currentTarget.src.includes("/thumbnail/")
+            ) {
+              e.currentTarget.src = assetUrl;
+              return;
+            }
+            setError("Could not load the preview for this file.");
+          }}
         />
       );
     }
@@ -695,116 +825,151 @@ export function AssetDetail({
     );
   }
 
-  return (
+  const lightbox = (
     <>
-    <dialog
-      className="modal modal-open"
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
-    >
-      <div className="glass-scrim absolute inset-0 pointer-events-none" />
       <div
-        className="modal-box w-11/12 max-w-6xl h-[min(90vh,880px)] p-0 flex flex-col overflow-hidden glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
-        style={{ borderRadius: 22 }}
+        className="preview-lightbox"
+        role="dialog"
+        aria-modal="true"
+        aria-label={asset.original_name || "File preview"}
       >
-        <div className="shrink-0 px-4 py-2.5 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            {showRename ? (
-              <input
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleRename();
-                  if (e.key === "Escape") {
-                    setShowRename(false);
-                    setRenameValue(asset.original_name || "");
-                  }
-                }}
-                className="input input-bordered input-sm w-full type-title"
-                autoFocus
-              />
-            ) : (
-              <h2 className="type-title truncate">
-                {asset.original_name || "Untitled file"}
-              </h2>
-            )}
-          </div>
-
-          <div className="dock-pill shrink-0 !gap-1">
-            {!trashMode && (
-              <button
-                type="button"
-                onClick={() => void toggleFavorite()}
-                disabled={busy}
-                aria-label={favorited ? "Unstar" : "Star"}
-                className={`dock-btn !px-2.5 ${favorited ? "pulse-confirm" : ""}`}
-              >
-                {favorited ? (
-                  <IconStarFilled size={16} className="text-[#ff9f0a]" />
-                ) : (
-                  <IconStar size={16} />
-                )}
-              </button>
-            )}
-            {canDownload && assetUrl && !trashMode && (
-              <button
-                type="button"
-                className="dock-btn dock-btn-primary !py-1.5"
-                onClick={() => {
-                  void queueAssetDownload(
-                    asset.file_id,
-                    asset.original_name || "download",
-                    { upsertJob, removeJob },
-                  );
-                }}
-              >
-                <IconDownload size={14} />
-                Download
-              </button>
-            )}
-            {!trashMode && canEditDetails ? (
-              <button
-                type="button"
-                onClick={() => setShareOpen(true)}
-                aria-label="Share"
-                className="dock-btn !px-2.5"
-              >
-                <IconShare size={16} />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => setSidePanelOpen((v) => !v)}
-              aria-label={sidePanelOpen ? "Hide info" : "Show info"}
-              aria-pressed={sidePanelOpen}
-              className="dock-btn !px-2.5"
-            >
-              <IconInfoCircle size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="dock-btn !px-2.5"
-            >
-              <IconX size={16} />
-            </button>
-          </div>
-        </div>
-
-        <div className="relative flex flex-1 overflow-hidden min-h-0">
-          <div
-            className={`flex-1 flex items-center justify-center overflow-hidden min-w-0 relative ${
-              isMediaStage || trashMode ? "preview-stage" : "p-3"
-            }`}
-          >
-            <div className="h-full w-full flex items-center justify-center min-h-0 overflow-hidden relative">
-              {renderPreview()}
+        <button
+          type="button"
+          className="preview-lightbox-scrim"
+          aria-label="Close preview"
+          onClick={onClose}
+        />
+        <div className="preview-lightbox-shell">
+          <header className="preview-lightbox-bar">
+            <div className="preview-lightbox-title min-w-0">
+              {showRename ? (
+                <input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void handleRename();
+                    if (e.key === "Escape") {
+                      setShowRename(false);
+                      setRenameValue(asset.original_name || "");
+                    }
+                  }}
+                  className="flat-input w-full"
+                  autoFocus
+                />
+              ) : (
+                <h2 className="preview-lightbox-name truncate">
+                  {asset.original_name || "Untitled file"}
+                </h2>
+              )}
             </div>
+
+            <div className="preview-lightbox-actions">
+              {!trashMode && (
+                <button
+                  type="button"
+                  onClick={() => void toggleFavorite()}
+                  disabled={busy}
+                  aria-label={favorited ? "Unstar" : "Star"}
+                  className={`preview-tool-btn${favorited ? " is-active" : ""}`}
+                >
+                  {favorited ? (
+                    <IconStarFilled size={16} className="text-[#ff9f0a]" />
+                  ) : (
+                    <IconStar size={16} />
+                  )}
+                </button>
+              )}
+              {canDownload && assetUrl && !trashMode && (
+                <button
+                  type="button"
+                  className="preview-tool-btn preview-tool-btn--primary"
+                  onClick={() => {
+                    void queueAssetDownload(
+                      asset.file_id,
+                      asset.original_name || "download",
+                      { upsertJob, removeJob },
+                    );
+                  }}
+                >
+                  <IconDownload size={14} />
+                  <span className="preview-tool-label">Download</span>
+                </button>
+              )}
+              {isImage && canDownload && assetUrl && !trashMode ? (
+                <button
+                  type="button"
+                  className={`preview-tool-btn${
+                    preferFullQuality ||
+                    (imageSrc.includes("/asset/") && !imageUpgrading)
+                      ? " is-active"
+                      : ""
+                  }`}
+                  aria-pressed={preferFullQuality}
+                  aria-label={
+                    preferFullQuality
+                      ? "Using original quality"
+                      : "Show original quality"
+                  }
+                  title={
+                    preferFullQuality
+                      ? "Original quality on"
+                      : imageUpgrading
+                        ? "Loading original…"
+                        : "Original quality"
+                  }
+                  onClick={toggleFullQuality}
+                >
+                  <IconPhoto size={16} />
+                  <span className="preview-tool-label">
+                    {preferFullQuality
+                      ? "Original"
+                      : imageUpgrading
+                        ? "Loading…"
+                        : "Original"}
+                  </span>
+                </button>
+              ) : null}
+              {!trashMode && canEditDetails ? (
+                <button
+                  type="button"
+                  onClick={() => setShareOpen(true)}
+                  aria-label="Share"
+                  className="preview-tool-btn"
+                >
+                  <IconShare size={16} />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setSidePanelOpen((v) => !v)}
+                aria-label={sidePanelOpen ? "Hide info" : "Show info"}
+                aria-pressed={sidePanelOpen}
+                className={`preview-tool-btn${sidePanelOpen ? " is-active" : ""}`}
+              >
+                <IconInfoCircle size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="preview-tool-btn"
+              >
+                <IconX size={16} />
+              </button>
+            </div>
+          </header>
+
+          <div className="preview-lightbox-body">
+            <div
+              className={`preview-lightbox-stage${
+                isMediaStage || trashMode ? " is-media" : ""
+              }`}
+            >
+              <div className="preview-lightbox-stage-inner">
+                {renderPreview()}
+              </div>
             {isMediaStage && !trashMode ? (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+              <div className="preview-lightbox-nav">
                 <div className="preview-dock">
                   {onNavigateAsset && assets.length > 1 ? (
                     <>
@@ -867,19 +1032,19 @@ export function AssetDetail({
           </div>
 
           {sidePanelOpen ? (
-            <div className="absolute inset-0 z-10 sm:static sm:inset-auto sm:w-80 sm:shrink-0 surface !rounded-none flex flex-col overflow-hidden border-0 border-l border-[var(--line)]">
-              <div className="sm:hidden flex items-center justify-between px-4 pt-3 pb-1">
+            <aside className="preview-lightbox-meta">
+              <div className="preview-lightbox-meta-mobile-head">
                 <p className="type-label">Details</p>
                 <button
                   type="button"
                   aria-label="Close details"
-                  className="dock-btn !px-2"
+                  className="preview-tool-btn"
                   onClick={() => setSidePanelOpen(false)}
                 >
                   <IconX size={16} />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
+              <div className="preview-lightbox-meta-scroll">
               {/* Description */}
               <section>
                 <p className="type-micro opacity-50 mb-1.5">
@@ -1193,16 +1358,11 @@ export function AssetDetail({
                 </p>
               )}
               </div>
-            </div>
+            </aside>
           ) : null}
+          </div>
         </div>
       </div>
-      <form method="dialog" className="modal-backdrop bg-transparent">
-        <button type="button" onClick={onClose}>
-          close
-        </button>
-      </form>
-    </dialog>
       {confirmDelete ? (
         <ConfirmModal
           title={trashMode ? "Delete forever" : "Move to trash"}
@@ -1227,4 +1387,7 @@ export function AssetDetail({
       ) : null}
     </>
   );
+
+  if (!mounted) return null;
+  return createPortal(lightbox, document.body);
 }

@@ -9,17 +9,17 @@ import {
   type AssetMenuAction,
 } from "@/components/AssetCard";
 import { AssetDetail } from "@/components/AssetDetail";
-import { FilterChips } from "@/components/FilterChips";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
-import { ROLE_LABELS, getTagChipStyles } from "@/lib/categories";
-import { IconChevronUp, IconDots, IconInfoCircle, IconX } from "@tabler/icons-react";
+import { getTagChipStyles } from "@/lib/categories";
+import { IconChevronRight, IconDots, IconInfoCircle, IconX } from "@tabler/icons-react";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { FolderMetaPanel } from "@/components/FolderMetaPanel";
 import { MoveAssetModal } from "@/components/MoveAssetModal";
 import { PasswordField } from "@/components/PasswordField";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { FolderTree } from "@/components/FolderTree";
 import { SelectionInspector } from "@/components/SelectionInspector";
 import { VirtualPhotoGrid } from "@/components/VirtualPhotoGrid";
 import { uploadFileWithProgress } from "@/lib/upload";
@@ -27,13 +27,19 @@ import { queueAssetDownload } from "@/lib/download";
 import { writeLastPlace } from "@/lib/lastPlace";
 import { readViewMode, writeViewMode, type ViewMode } from "@/lib/uiPrefs";
 import {
+  folderListCacheKey,
+  getCachedFolderAssets,
+  invalidateFolderAssetsCache,
+  prefetchFolderAssets,
+  setCachedFolderAssets,
+} from "@/lib/folderAssetsCache";
+import {
   canDownload,
   canEdit,
   type Asset,
   type Space,
   type SpaceRole,
   type Folder,
-  type Tag,
 } from "@/lib/types";
 
 type SpaceWorkspaceProps = {
@@ -64,8 +70,14 @@ export function SpaceWorkspace({
 }: SpaceWorkspaceProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { folderRequestId, serverOnline, upsertJob, removeJob } =
-    useDriveChrome();
+  const {
+    folderRequestId,
+    serverOnline,
+    upsertJob,
+    removeJob,
+    setPlaceNav,
+    libraryEpoch,
+  } = useDriveChrome();
 
   const editable = canEdit(role, isAdmin);
   const downloadable = canDownload(role, isAdmin);
@@ -77,10 +89,9 @@ export function SpaceWorkspace({
 
   const [folders, setFolders] = useState<Folder[]>([]);
   const [folderId, setFolderId] = useState<string | null>(folderFromUrl);
-  const [tag, setTag] = useState<string | null>(null);
-  const [tagOptions, setTagOptions] = useState<string[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Asset | null>(null);
   const [detailLaunch, setDetailLaunch] = useState<{
@@ -90,8 +101,9 @@ export function SpaceWorkspace({
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [metaFolder, setMetaFolder] = useState<Folder | null>(null);
-  const [fadeKey, setFadeKey] = useState(0);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
+  const hasLoadedOnce = useRef(false);
+  const loadGen = useRef(0);
 
   const [modal, setModal] = useState<ModalKind>(null);
   const [targetFolder, setTargetFolder] = useState<Folder | null>(null);
@@ -126,7 +138,12 @@ export function SpaceWorkspace({
     setFolderId(folderFromUrl);
   }, [folderFromUrl]);
 
+  const folderRequestSeen = useRef(folderRequestId);
   useEffect(() => {
+    // Only open when the shell bumps the counter — not when this page mounts
+    // with a leftover id (was opening New folder on every Place click).
+    if (folderRequestId === folderRequestSeen.current) return;
+    folderRequestSeen.current = folderRequestId;
     if (folderRequestId > 0 && editable) setShowNewFolder(true);
   }, [folderRequestId, editable]);
   useEffect(() => {
@@ -141,9 +158,28 @@ export function SpaceWorkspace({
     if (res.ok) setFolders(json.folders as Folder[]);
   }, [space.id]);
 
-  const loadAssets = useCallback(async () => {
-    setLoading(true);
+  const loadAssets = useCallback(async (opts?: { quiet?: boolean }) => {
+    const cacheKey = folderListCacheKey(space.id, {
+      folderId,
+      view,
+      query,
+    });
+    const quiet = Boolean(opts?.quiet || hasLoadedOnce.current);
+    const cached = getCachedFolderAssets(cacheKey);
+
+    if (cached) {
+      setAssets(cached);
+      setLoading(false);
+      if (quiet) setRefreshing(true);
+    } else if (!quiet) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
     setError(null);
+    const gen = ++loadGen.current;
+
     try {
       const params = new URLSearchParams({ space_id: space.id });
       if (query.trim()) {
@@ -157,10 +193,10 @@ export function SpaceWorkspace({
       } else if (folderId) {
         params.set("folder_id", folderId);
       }
-      if (tag && view !== "trash") params.set("tag", tag);
-
       const res = await fetch(`/api/search?${params.toString()}`);
       const json = await res.json();
+      if (gen !== loadGen.current) return;
+
       if (!res.ok) {
         if (json.code === "SPACE_LOCKED") {
           setSpaceLocked(true);
@@ -189,44 +225,25 @@ export function SpaceWorkspace({
         throw new Error(json.error || "Could not load files.");
       }
       setSpaceLocked(false);
-      setAssets(json.assets as Asset[]);
-      setFadeKey((k) => k + 1);
+      const next = (json.assets as Asset[]) ?? [];
+      setCachedFolderAssets(cacheKey, next);
+      setAssets(next);
+      hasLoadedOnce.current = true;
     } catch (err) {
+      if (gen !== loadGen.current) return;
       setError(err instanceof Error ? err.message : "Could not load files.");
-      setAssets([]);
+      if (!cached) setAssets([]);
     } finally {
-      setLoading(false);
+      if (gen === loadGen.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [space.id, folderId, query, tag, view]);
+  }, [space.id, folderId, query, view]);
 
   useEffect(() => {
     void loadFolders();
   }, [loadFolders]);
-
-  const reloadTagOptions = useCallback(async () => {
-    const res = await fetch("/api/tags");
-    const json = await res.json();
-    if (res.ok) {
-      setTagOptions(((json.tags as Tag[]) ?? []).map((t) => t.name));
-    }
-  }, []);
-
-  useEffect(() => {
-    void reloadTagOptions();
-  }, [reloadTagOptions]);
-
-  // Keep filter chips in sync when new tags are created during this session
-  useEffect(() => {
-    const fromAssets = new Set<string>();
-    for (const a of assets) {
-      for (const t of a.tags ?? []) fromAssets.add(t.name);
-    }
-    if (fromAssets.size === 0) return;
-    setTagOptions((prev) => {
-      const merged = new Set([...prev, ...fromAssets]);
-      return [...merged].sort((a, b) => a.localeCompare(b));
-    });
-  }, [assets]);
 
   // Enrich unlock modal with real folder name once folders load
   useEffect(() => {
@@ -238,9 +255,22 @@ export function SpaceWorkspace({
   }, [folders, modal, targetFolder]);
 
   useEffect(() => {
-    const handle = window.setTimeout(() => void loadAssets(), query ? 200 : 0);
+    const handle = window.setTimeout(
+      () => void loadAssets({ quiet: hasLoadedOnce.current }),
+      query ? 200 : 0,
+    );
     return () => window.clearTimeout(handle);
   }, [loadAssets, query]);
+
+  // Soft-reload when background uploads / library mutations finish
+  const libraryEpochSeen = useRef(libraryEpoch);
+  useEffect(() => {
+    if (libraryEpoch === libraryEpochSeen.current) return;
+    libraryEpochSeen.current = libraryEpoch;
+    invalidateFolderAssetsCache(space.id);
+    void loadAssets({ quiet: true });
+    void loadFolders();
+  }, [libraryEpoch, loadAssets, loadFolders, space.id]);
 
   useEffect(() => {
     if (!assetFromUrl || assets.length === 0) return;
@@ -248,24 +278,63 @@ export function SpaceWorkspace({
     if (found) setSelected(found);
   }, [assetFromUrl, assets]);
 
-  function navigateFolder(id: string | null) {
-    const params = new URLSearchParams();
-    if (id) params.set("folder", id);
-    const qs = params.toString();
-    router.push(`/s/${space.slug}${qs ? `?${qs}` : ""}`);
-    setFolderId(id);
-    setSelectedIds(new Set());
-    setSelectionMode(false);
-    const folderName = id
-      ? folders.find((f) => f.id === id)?.name ?? null
-      : null;
-    writeLastPlace({
+  const navigateFolder = useCallback(
+    (id: string | null) => {
+      const params = new URLSearchParams();
+      if (id) params.set("folder", id);
+      const qs = params.toString();
+      // Paint from cache immediately, then sync URL + folderId for the quiet fetch.
+      const cacheKey = folderListCacheKey(space.id, {
+        folderId: id,
+        view: "all",
+      });
+      const cached = getCachedFolderAssets(cacheKey);
+      if (cached) setAssets(cached);
+      setFolderId(id);
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+      router.push(`/s/${space.slug}${qs ? `?${qs}` : ""}`);
+      const folderName = id
+        ? folders.find((f) => f.id === id)?.name ?? null
+        : null;
+      writeLastPlace({
+        spaceSlug: space.slug,
+        spaceName: space.name,
+        folderId: id,
+        folderName,
+      });
+    },
+    [router, space.id, space.slug, space.name, folders],
+  );
+
+  const prefetchFolder = useCallback(
+    (id: string | null) => {
+      void prefetchFolderAssets(space.id, id);
+    },
+    [space.id],
+  );
+
+  useEffect(() => {
+    setPlaceNav({
       spaceSlug: space.slug,
       spaceName: space.name,
-      folderId: id,
-      folderName,
+      spaceId: space.id,
+      folders,
+      currentFolderId: folderId,
+      onNavigateFolder: navigateFolder,
+      onPrefetchFolder: prefetchFolder,
     });
-  }
+    return () => setPlaceNav(null);
+  }, [
+    space.slug,
+    space.name,
+    space.id,
+    folders,
+    folderId,
+    navigateFolder,
+    prefetchFolder,
+    setPlaceNav,
+  ]);
 
   useEffect(() => {
     const folderName = folderId
@@ -282,7 +351,7 @@ export function SpaceWorkspace({
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectionMode(false);
-  }, [view, folderId, query, tag]);
+  }, [view, folderId, query]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -553,30 +622,9 @@ export function SpaceWorkspace({
     }
   }
 
-  async function tryOpenFolder(folder: Folder) {
-    if (!folder.passcode_enabled) {
-      navigateFolder(folder.id);
-      return;
-    }
-    // Probe access — if locked, API returns FOLDER_LOCKED
-    const params = new URLSearchParams({
-      space_id: space.id,
-      folder_id: folder.id,
-    });
-    const res = await fetch(`/api/search?${params}`);
-    const json = await res.json();
-    if (res.ok) {
-      navigateFolder(folder.id);
-      return;
-    }
-    if (json.code === "FOLDER_LOCKED") {
-      setTargetFolder(folder);
-      setPasscodeInput("");
-      setModalError(null);
-      setModal("unlock");
-      return;
-    }
-    setError(json.error || "Could not open folder.");
+  function tryOpenFolder(folder: Folder) {
+    // Soft navigate — FOLDER_LOCKED from the quiet load opens the unlock modal.
+    navigateFolder(folder.id);
   }
 
   const childFolders = useMemo(() => {
@@ -940,14 +988,6 @@ export function SpaceWorkspace({
         }
       }}
     >
-      {view === "all" && !query.trim() ? (
-        <FolderTree
-          folders={folders}
-          spaceName={space.name}
-          currentFolderId={folderId}
-          onNavigate={(id) => navigateFolder(id)}
-        />
-      ) : null}
       <div className="flex-1 min-w-0 flex flex-col gap-4 p-4 sm:p-5 relative">
       {dragging ? (
         <div
@@ -958,98 +998,85 @@ export function SpaceWorkspace({
         </div>
       ) : null}
 
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0 flex-1">
+      <div className="place-toolbar">
+        <div className="place-toolbar-left min-w-0">
           {title ? (
-            <h1 className="type-page truncate">
-              {title}
-            </h1>
+            <h1 className="place-toolbar-title">{title}</h1>
           ) : (
-            <>
-              {breadcrumb.length > 1 ? (
-                <nav
-                  aria-label="Breadcrumb"
-                  className="breadcrumbs type-caption p-0 mb-1 max-w-full opacity-60"
+            <nav className="place-crumbs" aria-label="Breadcrumb">
+              {breadcrumb.map((crumb, i) => {
+                const isLast = i === breadcrumb.length - 1;
+                const hideMiddle =
+                  breadcrumb.length > 4 && i > 0 && i < breadcrumb.length - 2;
+                if (hideMiddle && i === 1) {
+                  return (
+                    <span key="ellipsis" className="place-crumb-sep-wrap">
+                      <IconChevronRight
+                        size={14}
+                        className="place-crumb-sep"
+                        aria-hidden
+                      />
+                      <span className="place-crumb place-crumb--muted">…</span>
+                    </span>
+                  );
+                }
+                if (hideMiddle) return null;
+                return (
+                  <span key={`${crumb.id ?? "root"}-${i}`} className="place-crumb-sep-wrap">
+                    {i > 0 ? (
+                      <IconChevronRight
+                        size={14}
+                        className="place-crumb-sep"
+                        aria-hidden
+                      />
+                    ) : null}
+                    {isLast ? (
+                      <span
+                        className="place-crumb place-crumb--current"
+                        title={crumb.name}
+                      >
+                        {crumb.name}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="place-crumb"
+                        style={i === 0 ? { color: space.color } : undefined}
+                        onClick={() => navigateFolder(crumb.id)}
+                        title={crumb.name}
+                      >
+                        {crumb.name}
+                      </button>
+                    )}
+                  </span>
+                );
+              })}
+              {currentFolder ? (
+                <button
+                  type="button"
+                  className="place-crumb-info"
+                  title="Folder details"
+                  onClick={() => setMetaFolder(currentFolder)}
                 >
-                  <ul className="flex-wrap items-center">
-                    {breadcrumb.slice(0, -1).map((crumb, i, ancestors) => {
-                      const hideMiddle =
-                        ancestors.length > 2 && i > 0 && i < ancestors.length - 1;
-                      if (hideMiddle && i === 1) {
-                        return (
-                          <li key="ellipsis">
-                            <span className="opacity-50">…</span>
-                          </li>
-                        );
-                      }
-                      if (hideMiddle) return null;
-                      return (
-                        <li key={`${crumb.id ?? "root"}-${i}`}>
-                          <button
-                            type="button"
-                            onClick={() => navigateFolder(crumb.id)}
-                            className="hover:text-[var(--accent)] max-w-[10rem] truncate"
-                            style={i === 0 ? { color: space.color } : undefined}
-                          >
-                            {crumb.name}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </nav>
+                  <IconInfoCircle size={15} stroke={1.75} />
+                </button>
               ) : null}
-              <div className="flex items-center gap-2 min-w-0">
-                {breadcrumb.length > 1 ? (
-                  <button
-                    type="button"
-                    className="dock-btn !px-2 shrink-0"
-                    title="Up one level"
-                    onClick={() =>
-                      navigateFolder(
-                        breadcrumb[breadcrumb.length - 2]?.id ?? null,
-                      )
-                    }
-                  >
-                    <IconChevronUp size={16} stroke={1.75} />
-                  </button>
-                ) : null}
-                <h1
-                  className="type-page truncate"
-                  style={
-                    breadcrumb.length === 1 ? { color: space.color } : undefined
-                  }
-                >
-                  {breadcrumb[breadcrumb.length - 1]?.name ?? space.name}
-                </h1>
-                {currentFolder ? (
-                  <button
-                    type="button"
-                    className="dock-btn !px-2 shrink-0"
-                    title="Folder details"
-                    onClick={() => setMetaFolder(currentFolder)}
-                  >
-                    <IconInfoCircle size={16} stroke={1.75} />
-                  </button>
-                ) : null}
-              </div>
-            </>
+            </nav>
           )}
-          <p className="type-caption opacity-50 mt-1">
-            {ROLE_LABELS[role || "viewer"] || "Viewer"}
-            {!serverOnline ? " · Server offline" : ""}
-          </p>
+          {!serverOnline ? (
+            <p className="place-toolbar-note">Server offline</p>
+          ) : null}
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="place-toolbar-right">
           {editable && currentFolder && view === "all" && !query.trim() ? (
             <div className="dropdown dropdown-end">
               <div
                 tabIndex={0}
                 role="button"
-                className="btn btn-ghost btn-sm gap-1.5"
+                className="place-toolbar-ghost"
               >
                 <IconDots size={16} />
-                Folder
+                <span>Folder</span>
               </div>
               <ul
                 tabIndex={0}
@@ -1115,92 +1142,49 @@ export function SpaceWorkspace({
         </div>
       </div>
 
-      {view !== "trash" && !query.trim() && tagOptions.length > 0 ? (
-        <FilterChips
-          label="Tag"
-          options={tagOptions}
-          value={tag}
-          onChange={setTag}
-        />
-      ) : null}
-
       {showNewFolder && editable ? (
-        <dialog
-          className="modal modal-open"
-          onCancel={(e) => {
-            e.preventDefault();
+        <Modal
+          title="New folder"
+          onClose={() => {
             setShowNewFolder(false);
             setNewFolderName("");
           }}
-        >
-          <div className="glass-scrim absolute inset-0 pointer-events-none" />
-          <form
-            className="modal-box max-w-sm p-0 glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
-            style={{ borderRadius: 22 }}
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => {
-              e.preventDefault();
-              void createFolder();
-            }}
-          >
-            <div className="flex items-center gap-2 px-5 pt-5 pb-2">
-              <h3 className="type-title flex-1">New folder</h3>
-              <button
-                type="button"
-                aria-label="Close"
-                className="dock-btn !px-2"
-                onClick={() => {
-                  setShowNewFolder(false);
-                  setNewFolderName("");
-                }}
-              >
-                <IconX size={16} />
-              </button>
-            </div>
-            <div className="px-5 py-3">
-              <label className="flex flex-col gap-1.5">
-                <span className="type-caption">Name</span>
-                <input
-                  ref={newFolderInputRef}
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  placeholder="Folder name"
-                  className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
-                />
-              </label>
-            </div>
-            <div className="flex justify-end gap-2 px-5 py-4">
-              <button
-                type="button"
-                className="btn-glass"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void createFolder();
+          }}
+          footer={
+            <>
+              <Button
+                variant="secondary"
                 onClick={() => {
                   setShowNewFolder(false);
                   setNewFolderName("");
                 }}
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
                 type="submit"
-                className="btn-glass-primary"
                 disabled={!newFolderName.trim()}
               >
-                Create
-              </button>
-            </div>
-          </form>
-          <form method="dialog" className="modal-backdrop bg-transparent">
-            <button
-              type="button"
-              onClick={() => {
-                setShowNewFolder(false);
-                setNewFolderName("");
-              }}
-            >
-              close
-            </button>
-          </form>
-        </dialog>
+                Create folder
+              </Button>
+            </>
+          }
+        >
+          <label className="flat-modal-field">
+            <span className="flat-modal-label">Name</span>
+            <input
+              ref={newFolderInputRef}
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="Folder name"
+              className="flat-input"
+            />
+          </label>
+        </Modal>
       ) : null}
 
       {error ? (
@@ -1405,7 +1389,6 @@ export function SpaceWorkspace({
                           return next;
                         });
                         await loadAssets();
-                        await reloadTagOptions();
                       })();
                     }}
                   >
@@ -1424,7 +1407,19 @@ export function SpaceWorkspace({
         </p>
       ) : null}
 
-      <div key={fadeKey} className="flex flex-col gap-4 transition-opacity duration-150">
+      <div
+        className={`flex flex-col gap-4 transition-opacity duration-150${
+          refreshing ? " opacity-80" : ""
+        }`}
+      >
+        {refreshing ? (
+          <div
+            className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--line)]"
+            aria-hidden
+          >
+            <div className="folder-refresh-bar h-full w-1/3 rounded-full bg-[var(--accent)]" />
+          </div>
+        ) : null}
         {childFolders.length > 0 ? (
           <section>
             <h2 className="type-micro opacity-50 mb-2">Folders</h2>
@@ -1433,6 +1428,8 @@ export function SpaceWorkspace({
                 <div
                   key={folder.id}
                   className="relative group/folder"
+                  onMouseEnter={() => prefetchFolder(folder.id)}
+                  onFocus={() => prefetchFolder(folder.id)}
                   onDragOver={(e) => {
                     if (!editable || !serverOnline) return;
                     e.preventDefault();
@@ -1456,7 +1453,7 @@ export function SpaceWorkspace({
                     color={space.color}
                     locked={Boolean(folder.passcode_enabled)}
                     canEdit={editable}
-                    onOpen={() => void tryOpenFolder(folder)}
+                    onOpen={() => tryOpenFolder(folder)}
                     onMenuAction={(action) => openMenu(folder, action)}
                   />
                   <button
@@ -1639,7 +1636,6 @@ export function SpaceWorkspace({
 
       {selected ? (
         <AssetDetail
-          key={`${selected.id}-${detailLaunch.move ? "move" : "view"}`}
           asset={selected}
           assets={assets}
           onNavigateAsset={(a) => {
@@ -1701,239 +1697,259 @@ export function SpaceWorkspace({
       ) : null}
 
       {modal === "unlock" && targetFolder ? (
-        <ModalShell title={`Unlock “${targetFolder.name}”`} onClose={() => setModal(null)}>
-          <form onSubmit={submitUnlock} className="flex flex-col gap-3">
-            <p className="type-body opacity-60">
-              Enter the folder passcode. Access lasts 8 hours.
-            </p>
-            <PasswordField
-              autoFocus
-              value={passcodeInput}
-              onChange={setPasscodeInput}
-              placeholder="Passcode"
-              autoComplete="current-password"
-            />
-            {modalError ? (
-              <p className="type-caption text-error">{modalError}</p>
-            ) : null}
-            <div className="modal-action mt-2">
-              <button
-                type="button"
+        <Modal
+          title={`Unlock “${targetFolder.name}”`}
+          description="Enter the folder passcode. Access lasts 8 hours."
+          onClose={() => setModal(null)}
+          closeDisabled={modalBusy}
+          onSubmit={submitUnlock}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={modalBusy}
                 onClick={() => setModal(null)}
-                className="btn btn-ghost"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={modalBusy}
-                className="btn btn-primary"
-              >
-                Unlock
-              </button>
-            </div>
-          </form>
-        </ModalShell>
+              </Button>
+              <Button variant="primary" type="submit" disabled={modalBusy}>
+                {modalBusy ? "Unlocking…" : "Unlock folder"}
+              </Button>
+            </>
+          }
+        >
+          <PasswordField
+            autoFocus
+            value={passcodeInput}
+            onChange={setPasscodeInput}
+            placeholder="Passcode"
+            autoComplete="current-password"
+          />
+          {modalError ? <p className="flat-modal-error">{modalError}</p> : null}
+        </Modal>
       ) : null}
 
       {modal === "space_unlock" ? (
-        <ModalShell title={`Unlock “${space.name}”`} onClose={() => setModal(null)}>
-          <form onSubmit={submitSpaceUnlock} className="flex flex-col gap-3">
-            <p className="type-body opacity-60">
-              Enter the space passcode. Access lasts 8 hours.
-            </p>
-            <PasswordField
-              autoFocus
-              value={passcodeInput}
-              onChange={setPasscodeInput}
-              placeholder="Passcode"
-              autoComplete="current-password"
-            />
-            {modalError ? (
-              <p className="type-caption text-error">{modalError}</p>
-            ) : null}
-            <div className="modal-action mt-2">
-              <button
-                type="button"
+        <Modal
+          title={`Unlock “${space.name}”`}
+          description="Enter the place passcode. Access lasts 8 hours."
+          onClose={() => setModal(null)}
+          closeDisabled={modalBusy}
+          onSubmit={submitSpaceUnlock}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={modalBusy}
                 onClick={() => setModal(null)}
-                className="btn btn-ghost"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={modalBusy}
-                className="btn btn-primary"
-              >
-                Unlock
-              </button>
-            </div>
-          </form>
-        </ModalShell>
+              </Button>
+              <Button variant="primary" type="submit" disabled={modalBusy}>
+                {modalBusy ? "Unlocking…" : "Unlock place"}
+              </Button>
+            </>
+          }
+        >
+          <PasswordField
+            autoFocus
+            value={passcodeInput}
+            onChange={setPasscodeInput}
+            placeholder="Passcode"
+            autoComplete="current-password"
+          />
+          {modalError ? <p className="flat-modal-error">{modalError}</p> : null}
+        </Modal>
       ) : null}
 
       {modal === "bulk_move" ? (
-        <ModalShell title="Move selected files" onClose={() => setModal(null)}>
-          <form onSubmit={bulkMove} className="flex flex-col gap-3">
-            <label className="type-caption opacity-60">
-              Destination folder
-              <select
-                value={bulkFolderId ?? ""}
-                onChange={(e) =>
-                  setBulkFolderId(e.target.value ? e.target.value : null)
-                }
-                className="select select-bordered mt-1 w-full"
-              >
-                <option value="">Space root</option>
-                {folders.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {modalError ? (
-              <p className="type-caption text-error">{modalError}</p>
-            ) : null}
-            <div className="modal-action mt-2">
-              <button
-                type="button"
+        <Modal
+          title="Move files"
+          description={`Move ${selectedIds.size} selected file${selectedIds.size === 1 ? "" : "s"}`}
+          onClose={() => setModal(null)}
+          closeDisabled={bulkBusy}
+          onSubmit={bulkMove}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={bulkBusy}
                 onClick={() => setModal(null)}
-                className="btn btn-ghost"
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={bulkBusy}
-                className="btn btn-primary"
-              >
-                Move {selectedIds.size}
-              </button>
-            </div>
-          </form>
-        </ModalShell>
+              </Button>
+              <Button variant="primary" type="submit" disabled={bulkBusy}>
+                {bulkBusy ? "Moving…" : "Move here"}
+              </Button>
+            </>
+          }
+        >
+          <label className="flat-modal-field">
+            <span className="flat-modal-label">Destination</span>
+            <select
+              value={bulkFolderId ?? ""}
+              onChange={(e) =>
+                setBulkFolderId(e.target.value ? e.target.value : null)
+              }
+              className="flat-input"
+            >
+              <option value="">Place root</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {modalError ? <p className="flat-modal-error">{modalError}</p> : null}
+        </Modal>
       ) : null}
 
       {modal === "rename" && targetFolder ? (
-        <ModalShell title="Rename folder" onClose={() => setModal(null)}>
-          <form onSubmit={submitRename} className="flex flex-col gap-3">
+        <Modal
+          title="Rename folder"
+          onClose={() => setModal(null)}
+          closeDisabled={modalBusy}
+          onSubmit={submitRename}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={modalBusy}
+                onClick={() => setModal(null)}
+              >
+                Cancel
+              </Button>
+              <Button variant="primary" type="submit" disabled={modalBusy}>
+                {modalBusy ? "Saving…" : "Rename"}
+              </Button>
+            </>
+          }
+        >
+          <label className="flat-modal-field">
+            <span className="flat-modal-label">Name</span>
             <input
               autoFocus
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
-              className="input input-bordered w-full"
+              className="flat-input"
             />
-            {modalError ? (
-              <p className="type-caption text-error">{modalError}</p>
-            ) : null}
-            <div className="modal-action mt-2">
-              <button type="button" onClick={() => setModal(null)} className="btn btn-ghost">
-                Cancel
-              </button>
-              <button type="submit" disabled={modalBusy} className="btn btn-primary">
-                Save
-              </button>
-            </div>
-          </form>
-        </ModalShell>
+          </label>
+          {modalError ? <p className="flat-modal-error">{modalError}</p> : null}
+        </Modal>
       ) : null}
 
       {modal === "move" && targetFolder ? (
-        <ModalShell title="Move folder" onClose={() => setModal(null)}>
-          <form onSubmit={submitMoveFolder} className="flex flex-col gap-3">
+        <Modal
+          title="Move folder"
+          description={`Move “${targetFolder.name}”`}
+          onClose={() => setModal(null)}
+          closeDisabled={modalBusy}
+          onSubmit={submitMoveFolder}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={modalBusy}
+                onClick={() => setModal(null)}
+              >
+                Cancel
+              </Button>
+              <Button variant="primary" type="submit" disabled={modalBusy}>
+                {modalBusy ? "Moving…" : "Move here"}
+              </Button>
+            </>
+          }
+        >
+          <label className="flat-modal-field">
+            <span className="flat-modal-label">Destination</span>
             <select
               value={moveParentId ?? ""}
               onChange={(e) =>
                 setMoveParentId(e.target.value ? e.target.value : null)
               }
-              className="select select-bordered w-full"
+              className="flat-input"
             >
-              <option value="">Space root</option>
+              <option value="">Place root</option>
               {moveTargets.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>
               ))}
             </select>
-            {modalError ? (
-              <p className="type-caption text-error">{modalError}</p>
-            ) : null}
-            <div className="modal-action mt-2">
-              <button type="button" onClick={() => setModal(null)} className="btn btn-ghost">
-                Cancel
-              </button>
-              <button type="submit" disabled={modalBusy} className="btn btn-primary">
-                Move
-              </button>
-            </div>
-          </form>
-        </ModalShell>
+          </label>
+          {modalError ? <p className="flat-modal-error">{modalError}</p> : null}
+        </Modal>
       ) : null}
 
       {modal === "passcode" && targetFolder ? (
-        <ModalShell
+        <Modal
           title={
-            targetFolder.passcode_enabled
-              ? "Change passcode"
-              : "Set passcode"
+            targetFolder.passcode_enabled ? "Change passcode" : "Set passcode"
           }
+          description={`For “${targetFolder.name}”`}
           onClose={() => setModal(null)}
-        >
-          <form onSubmit={submitPasscode} className="flex flex-col gap-3">
-            <PasswordField
-              autoFocus
-              value={passcodeInput}
-              onChange={setPasscodeInput}
-              placeholder="New passcode"
-              autoComplete="new-password"
-            />
-            <PasswordField
-              value={passcodeConfirm}
-              onChange={setPasscodeConfirm}
-              placeholder="Confirm passcode"
-              autoComplete="new-password"
-            />
-            {modalError ? (
-              <p className="type-caption text-error">{modalError}</p>
-            ) : null}
-            <div className="modal-action mt-2">
-              <button type="button" onClick={() => setModal(null)} className="btn btn-ghost">
+          closeDisabled={modalBusy}
+          onSubmit={submitPasscode}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={modalBusy}
+                onClick={() => setModal(null)}
+              >
                 Cancel
-              </button>
-              <button type="submit" disabled={modalBusy} className="btn btn-primary">
-                Save
-              </button>
-            </div>
-          </form>
-        </ModalShell>
+              </Button>
+              <Button variant="primary" type="submit" disabled={modalBusy}>
+                {modalBusy ? "Saving…" : "Save passcode"}
+              </Button>
+            </>
+          }
+        >
+          <PasswordField
+            autoFocus
+            value={passcodeInput}
+            onChange={setPasscodeInput}
+            placeholder="New passcode"
+            autoComplete="new-password"
+          />
+          <PasswordField
+            value={passcodeConfirm}
+            onChange={setPasscodeConfirm}
+            placeholder="Confirm passcode"
+            autoComplete="new-password"
+          />
+          {modalError ? <p className="flat-modal-error">{modalError}</p> : null}
+        </Modal>
       ) : null}
 
       {modal === "confirm_clear" && targetFolder ? (
-        <ModalShell title="Turn passcode off" onClose={() => setModal(null)}>
-          <div className="flex flex-col gap-3">
-            <p className="type-body opacity-60">
-              Anyone with access to {space.name} will be able to open “
-              {targetFolder.name}” without a passcode.
-            </p>
-            {modalError ? (
-              <p className="type-caption text-error">{modalError}</p>
-            ) : null}
-            <div className="modal-action mt-2">
-              <button type="button" onClick={() => setModal(null)} className="btn btn-ghost">
+        <Modal
+          title="Turn passcode off"
+          description={`Anyone with access to ${space.name} will be able to open “${targetFolder.name}” without a passcode.`}
+          onClose={() => setModal(null)}
+          closeDisabled={modalBusy}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={modalBusy}
+                onClick={() => setModal(null)}
+              >
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="destructive"
                 disabled={modalBusy}
                 onClick={() => void clearPasscode()}
-                className="btn btn-primary"
               >
-                Turn off
-              </button>
-            </div>
-          </div>
-        </ModalShell>
+                {modalBusy ? "Working…" : "Turn off passcode"}
+              </Button>
+            </>
+          }
+        >
+          {modalError ? <p className="flat-modal-error">{modalError}</p> : null}
+        </Modal>
       ) : null}
 
       {modal === "confirm_delete_folder" && targetFolder ? (
@@ -1979,50 +1995,40 @@ export function SpaceWorkspace({
       ) : null}
 
       {renameAssetTarget ? (
-        <dialog
-          className="modal modal-open"
-          onCancel={(e) => {
-            e.preventDefault();
-            setRenameAssetTarget(null);
-          }}
+        <Modal
+          title="Rename file"
+          onClose={() => setRenameAssetTarget(null)}
+          closeDisabled={modalBusy}
+          onSubmit={confirmRenameAsset}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={modalBusy}
+                onClick={() => setRenameAssetTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={modalBusy || !renameAssetValue.trim()}
+              >
+                {modalBusy ? "Saving…" : "Rename"}
+              </Button>
+            </>
+          }
         >
-          <div className="glass-scrim absolute inset-0 pointer-events-none" />
-          <form
-            onSubmit={confirmRenameAsset}
-            onClick={(e) => e.stopPropagation()}
-            className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
-            style={{ borderRadius: 22 }}
-          >
-            <h3 className="type-title mb-3">Rename file</h3>
+          <label className="flat-modal-field">
+            <span className="flat-modal-label">Name</span>
             <input
               autoFocus
               value={renameAssetValue}
               onChange={(e) => setRenameAssetValue(e.target.value)}
-              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
+              className="flat-input"
             />
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                type="button"
-                className="btn-glass"
-                onClick={() => setRenameAssetTarget(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn-glass-primary"
-                disabled={modalBusy || !renameAssetValue.trim()}
-              >
-                Save
-              </button>
-            </div>
-          </form>
-          <form method="dialog" className="modal-backdrop bg-transparent">
-            <button type="button" onClick={() => setRenameAssetTarget(null)}>
-              close
-            </button>
-          </form>
-        </dialog>
+          </label>
+        </Modal>
       ) : null}
 
       {moveAssetTarget ? (
@@ -2051,51 +2057,5 @@ export function SpaceWorkspace({
         />
       ) : null}
     </div>
-  );
-}
-
-function ModalShell({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <dialog
-      className="modal modal-open"
-      onClick={onClose}
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
-    >
-      <div className="glass-scrim absolute inset-0 pointer-events-none" />
-      <div
-        className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
-        style={{ borderRadius: 22 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 mb-3">
-          <h2 className="type-title flex-1">{title}</h2>
-          <button
-            type="button"
-            aria-label="Close"
-            className="dock-btn !px-2"
-            onClick={onClose}
-          >
-            <IconX size={16} />
-          </button>
-        </div>
-        {children}
-      </div>
-      <form method="dialog" className="modal-backdrop bg-transparent">
-        <button type="button" onClick={onClose}>
-          close
-        </button>
-      </form>
-    </dialog>
   );
 }

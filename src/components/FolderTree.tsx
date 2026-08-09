@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconChevronDown, IconChevronRight, IconFolder } from "@tabler/icons-react";
 import type { Folder } from "@/lib/types";
 
@@ -9,6 +9,14 @@ type FolderTreeProps = {
   spaceName: string;
   currentFolderId: string | null;
   onNavigate: (folderId: string | null) => void;
+  /** Warm folder listing cache on hover */
+  onPrefetch?: (folderId: string | null) => void;
+  /** panel = sticky aside; embedded = fills parent (app sidebar) */
+  variant?: "panel" | "embedded";
+  /** When false, skip the place/root row (parent already renders it) */
+  showRoot?: boolean;
+  /** Extra indent depth for guide lines when nested under a place */
+  baseDepth?: number;
 };
 
 type Node = Folder & { children: Node[] };
@@ -30,18 +38,69 @@ function buildTree(folders: Folder[]): Node[] {
   return walk(null);
 }
 
+function ancestorIdsTo(folderId: string | null, folders: Folder[]): string[] {
+  if (!folderId) return [];
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const ids: string[] = [];
+  let cur = byId.get(folderId);
+  while (cur) {
+    ids.push(cur.id);
+    cur = cur.parent_folder_id ? byId.get(cur.parent_folder_id) : undefined;
+  }
+  return ids;
+}
+
+function TreeGuides({
+  depth,
+  isLast,
+  ancestorContinues,
+}: {
+  depth: number;
+  isLast: boolean;
+  ancestorContinues: boolean[];
+}) {
+  if (depth <= 0) return null;
+  return (
+    <span className="tree-guides" aria-hidden>
+      {Array.from({ length: depth }, (_, i) => {
+        const lastCol = i === depth - 1;
+        const continueLine = lastCol ? !isLast : ancestorContinues[i];
+        return (
+          <span
+            key={i}
+            className={[
+              "tree-guide-col",
+              lastCol ? "tree-guide-col--elbow" : "",
+              continueLine ? "tree-guide-col--continue" : "",
+              lastCol && isLast ? "tree-guide-col--last" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
 function TreeNode({
   node,
   depth,
+  isLast,
+  ancestorContinues,
   currentFolderId,
   onNavigate,
+  onPrefetch,
   expanded,
   toggle,
 }: {
   node: Node;
   depth: number;
+  isLast: boolean;
+  ancestorContinues: boolean[];
   currentFolderId: string | null;
   onNavigate: (id: string | null) => void;
+  onPrefetch?: (id: string | null) => void;
   expanded: Set<string>;
   toggle: (id: string) => void;
 }) {
@@ -50,15 +109,21 @@ function TreeNode({
   const active = currentFolderId === node.id;
 
   return (
-    <div>
+    <div className="tree-node">
       <button
         type="button"
         className={`tree-row ${active ? "active" : ""}`}
-        style={{ paddingLeft: 8 + depth * 12 }}
         onClick={() => onNavigate(node.id)}
+        onMouseEnter={() => onPrefetch?.(node.id)}
+        onFocus={() => onPrefetch?.(node.id)}
       >
+        <TreeGuides
+          depth={depth}
+          isLast={isLast}
+          ancestorContinues={ancestorContinues}
+        />
         <span
-          className="w-4 shrink-0 inline-flex"
+          className="tree-chevron"
           onClick={(e) => {
             if (!hasKids) return;
             e.stopPropagation();
@@ -67,23 +132,28 @@ function TreeNode({
         >
           {hasKids ? (
             open ? (
-              <IconChevronDown size={14} />
+              <IconChevronDown size={14} stroke={1.75} />
             ) : (
-              <IconChevronRight size={14} />
+              <IconChevronRight size={14} stroke={1.75} />
             )
-          ) : null}
+          ) : (
+            <span className="tree-chevron-spacer" />
+          )}
         </span>
         <IconFolder size={14} className="text-[var(--ink-faint)] shrink-0" />
         <span className="truncate">{node.name}</span>
       </button>
       {hasKids && open
-        ? node.children.map((c) => (
+        ? node.children.map((c, i) => (
             <TreeNode
               key={c.id}
               node={c}
               depth={depth + 1}
+              isLast={i === node.children.length - 1}
+              ancestorContinues={[...ancestorContinues, !isLast]}
               currentFolderId={currentFolderId}
               onNavigate={onNavigate}
+              onPrefetch={onPrefetch}
               expanded={expanded}
               toggle={toggle}
             />
@@ -98,9 +168,25 @@ export function FolderTree({
   spaceName,
   currentFolderId,
   onNavigate,
+  onPrefetch,
+  variant = "panel",
+  showRoot = true,
+  baseDepth = 0,
 }: FolderTreeProps) {
   const tree = useMemo(() => buildTree(folders), [folders]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    const chain = ancestorIdsTo(currentFolderId, folders);
+    if (chain.length === 0) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const id of chain) {
+        if (id !== currentFolderId) next.add(id);
+      }
+      return next;
+    });
+  }, [currentFolderId, folders]);
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -111,28 +197,51 @@ export function FolderTree({
     });
   }
 
-  return (
-    <aside className="tree-panel hidden md:flex flex-col w-[220px] shrink-0 max-h-[calc(100vh-var(--bar-h)-var(--dock-h)-2rem)] sticky top-2 overflow-y-auto">
-      <button
-        type="button"
-        className={`tree-row ${currentFolderId == null ? "active" : ""}`}
-        onClick={() => onNavigate(null)}
-      >
-        <span className="w-4" />
-        <IconFolder size={14} className="text-[var(--accent)]" />
-        <span className="truncate font-medium">{spaceName}</span>
-      </button>
-      {tree.map((n) => (
+  const body = (
+    <>
+      {showRoot ? (
+        <button
+          type="button"
+          className={`tree-row ${currentFolderId == null ? "active" : ""}`}
+          onClick={() => onNavigate(null)}
+          onMouseEnter={() => onPrefetch?.(null)}
+          onFocus={() => onPrefetch?.(null)}
+        >
+          <span className="tree-chevron">
+            <span className="tree-chevron-spacer" />
+          </span>
+          <IconFolder size={14} className="text-[var(--accent)]" />
+          <span className="truncate font-medium">{spaceName}</span>
+        </button>
+      ) : null}
+      {tree.map((n, i) => (
         <TreeNode
           key={n.id}
           node={n}
-          depth={0}
+          depth={baseDepth + (showRoot ? 1 : 0)}
+          isLast={i === tree.length - 1}
+          ancestorContinues={
+            showRoot || baseDepth > 0
+              ? Array.from({ length: baseDepth + (showRoot ? 1 : 0) - 1 }, () => true)
+              : []
+          }
           currentFolderId={currentFolderId}
           onNavigate={onNavigate}
+          onPrefetch={onPrefetch}
           expanded={expanded}
           toggle={toggle}
         />
       ))}
+    </>
+  );
+
+  if (variant === "embedded") {
+    return <div className="folder-tree-embedded">{body}</div>;
+  }
+
+  return (
+    <aside className="tree-panel hidden md:flex flex-col w-[220px] shrink-0 max-h-[calc(100vh-var(--bar-h)-2rem)] sticky top-2 overflow-y-auto">
+      {body}
     </aside>
   );
 }

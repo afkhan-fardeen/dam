@@ -19,6 +19,9 @@ const ACTIONS = [
   "create_space",
   "create_user",
   "invite_user",
+  "update_user",
+  "delete_user",
+  "reset_password",
   "change_role",
 ];
 

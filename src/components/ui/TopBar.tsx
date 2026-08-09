@@ -1,23 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import type { ServerStatus } from "@/lib/useFileServerHealth";
 
 type TopBarProps = {
   brandHref?: string;
   brandLabel?: string;
+  /** e.g. mobile nav toggle */
+  leading?: ReactNode;
+  /** Slim search field (center) */
+  center?: ReactNode;
+  /** e.g. current place name */
+  context?: ReactNode;
   trailing?: ReactNode;
-  more?: ReactNode;
   serverStatus?: ServerStatus;
 };
-
-function formatClock(d: Date) {
-  return d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 function statusCopy(status: ServerStatus): { label: string; color: string } {
   switch (status) {
@@ -32,43 +30,36 @@ function statusCopy(status: ServerStatus): { label: string; color: string } {
 
 export function TopBar({
   brandHref = "/",
-  brandLabel = "",
+  brandLabel = "Assets",
+  leading,
+  center,
+  context,
   trailing,
-  more,
   serverStatus,
 }: TopBarProps) {
-  const [now, setNow] = useState(() => new Date());
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
-
   const status = serverStatus ? statusCopy(serverStatus) : null;
-  const showBrand = Boolean(brandLabel?.trim());
 
   return (
     <header
-      className="topbar-flat shrink-0 flex items-center justify-between gap-3 px-4 sm:px-6 relative z-40"
+      className={`topbar-flat${center ? "" : " topbar-flat--no-search"}`}
       style={{ viewTransitionName: "flat-topbar" }}
     >
-      <div className="flex items-center gap-2 min-w-0">
-        {showBrand ? (
-          <Link
-            href={brandHref}
-            className="text-[14px] font-semibold text-[var(--ink)] truncate hover:opacity-80"
-          >
+      <div className="topbar-left">
+        {leading}
+        {brandLabel?.trim() ? (
+          <Link href={brandHref} className="topbar-brand">
             {brandLabel}
           </Link>
-        ) : (
-          <span className="w-0" aria-hidden />
-        )}
-        {more}
+        ) : null}
+        {context ? <div className="topbar-context">{context}</div> : null}
       </div>
-      <div className="flex items-center gap-3 shrink-0">
+
+      {center ? <div className="topbar-center">{center}</div> : <div />}
+
+      <div className="topbar-right">
         {status ? (
           <div
-            className="flex items-center gap-1.5 type-caption"
+            className="topbar-status"
             title={
               status.label === "PC offline"
                 ? "File server unavailable — uploads and previews may fail"
@@ -78,19 +69,13 @@ export function TopBar({
             }
           >
             <span
-              className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+              className="topbar-status-dot"
               style={{ backgroundColor: status.color }}
               aria-hidden
             />
-            <span className="hidden sm:inline">{status.label}</span>
+            <span className="topbar-status-label">{status.label}</span>
           </div>
         ) : null}
-        <time
-          className="type-caption tabular-nums hidden sm:block"
-          dateTime={now.toISOString()}
-        >
-          {formatClock(now)}
-        </time>
         {trailing}
       </div>
     </header>

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { IconX } from "@tabler/icons-react";
 import type { Folder } from "@/lib/types";
-import { GlassButton } from "@/components/glass/GlassButton";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 
 type MoveAssetModalProps = {
   assetName: string;
@@ -15,7 +15,6 @@ type MoveAssetModalProps = {
   onMove: (folderId: string | null) => void | Promise<void>;
 };
 
-/** Quick move dialog — pick folder without opening the file preview. */
 export function MoveAssetModal({
   assetName,
   spaceId,
@@ -69,74 +68,44 @@ export function MoveAssetModal({
   }
 
   return (
-    <dialog
-      className="modal modal-open"
-      onCancel={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
+    <Modal
+      title="Move file"
+      description={assetName}
+      onClose={onClose}
+      closeDisabled={busy}
+      onSubmit={(e) => void handleSubmit(e)}
+      footer={
+        <>
+          <Button variant="secondary" disabled={busy} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="primary" type="submit" disabled={busy || loading}>
+            {busy ? "Moving…" : "Move here"}
+          </Button>
+        </>
+      }
     >
-      <div className="flat-scrim absolute inset-0 pointer-events-none" />
-      <form
-        onSubmit={(e) => void handleSubmit(e)}
-        onClick={(e) => e.stopPropagation()}
-        className="modal-box max-w-sm surface flat-fade !bg-[var(--surface)] border-0 shadow-none"
-        style={{ borderRadius: 22 }}
-      >
-        <div className="flex items-start gap-2 mb-3">
-          <h3 className="type-title flex-1">Move file</h3>
-          <button
-            type="button"
-            aria-label="Close"
-            className="dock-btn !px-2"
-            onClick={onClose}
-          >
-            <IconX size={16} />
-          </button>
-        </div>
-        <p className="type-caption mb-3 truncate" title={assetName}>
-          {assetName}
-        </p>
-        {loading ? (
-          <div className="flex justify-center py-6">
-            <span className="glass-shimmer inline-block h-4 w-4 rounded-full" />
-          </div>
-        ) : (
+      {loading ? (
+        <p className="type-caption">Loading folders…</p>
+      ) : (
+        <label className="flat-modal-field">
+          <span className="flat-modal-label">Destination</span>
           <select
             value={folderId ?? ""}
             onChange={(e) => setFolderId(e.target.value || null)}
-            className="select select-bordered select-sm w-full type-body bg-white/70 border-[var(--line)]"
+            className="flat-input"
             autoFocus
           >
-            <option value="">Space root</option>
+            <option value="">Place root</option>
             {folders.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.passcode_enabled ? `${f.name} (locked)` : f.name}
               </option>
             ))}
           </select>
-        )}
-        {error ? (
-          <p className="type-caption text-[#ff3b30] mt-2">{error}</p>
-        ) : null}
-        <div className="flex justify-end gap-2 mt-5">
-          <GlassButton variant="glass" disabled={busy} onClick={onClose}>
-            Cancel
-          </GlassButton>
-          <GlassButton
-            variant="primary"
-            type="submit"
-            disabled={busy || loading}
-          >
-            {busy ? "Moving…" : "Move"}
-          </GlassButton>
-        </div>
-      </form>
-      <form method="dialog" className="modal-backdrop bg-transparent">
-        <button type="button" onClick={onClose}>
-          close
-        </button>
-      </form>
-    </dialog>
+        </label>
+      )}
+      {error ? <p className="flat-modal-error">{error}</p> : null}
+    </Modal>
   );
 }

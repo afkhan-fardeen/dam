@@ -2,7 +2,13 @@
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-type Variant = "primary" | "secondary" | "danger" | "ghost" | "glass";
+type Variant =
+  | "primary"
+  | "secondary"
+  | "danger"
+  | "destructive"
+  | "ghost"
+  | "glass";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: Variant;
@@ -14,6 +20,7 @@ const VARIANT_CLASS: Record<Variant, string> = {
   secondary: "btn-flat",
   glass: "btn-flat",
   danger: "btn-flat-danger",
+  destructive: "btn-flat-destructive",
   ghost: "btn-flat-ghost",
 };
 

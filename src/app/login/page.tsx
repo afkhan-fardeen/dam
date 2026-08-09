@@ -87,15 +87,91 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 bg-[var(--bg)]">
+    <div className="login-page">
+      <div className="login-marks" aria-hidden>
+        <div className="login-track login-track--1">
+          <div className="login-track-inner">
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+          </div>
+          <div className="login-track-inner" aria-hidden>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+          </div>
+        </div>
+        <div className="login-track login-track--2">
+          <div className="login-track-inner">
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+          </div>
+          <div className="login-track-inner" aria-hidden>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+          </div>
+        </div>
+        <div className="login-track login-track--3">
+          <div className="login-track-inner">
+            <span>Seissense</span>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+          </div>
+          <div className="login-track-inner" aria-hidden>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+            <span>Seissense</span>
+            <span>Loveboo</span>
+            <span>Sense Wellness</span>
+          </div>
+        </div>
+        <div className="login-track login-track--4">
+          <div className="login-track-inner">
+            <span>Sense Wellness</span>
+            <span>Loveboo</span>
+            <span>Seissense</span>
+            <span>Sense Wellness</span>
+            <span>Loveboo</span>
+            <span>Seissense</span>
+          </div>
+          <div className="login-track-inner" aria-hidden>
+            <span>Sense Wellness</span>
+            <span>Loveboo</span>
+            <span>Seissense</span>
+            <span>Sense Wellness</span>
+            <span>Loveboo</span>
+            <span>Seissense</span>
+          </div>
+        </div>
+      </div>
       <form
         onSubmit={(e) => void handleSubmit(e)}
-        className="surface flat-fade w-full max-w-[360px] p-7 flex flex-col gap-5"
+        className="login-card surface"
       >
-        <h1 className="type-page text-center">Assets</h1>
-        <p className="type-caption text-center -mt-3">Sign in to continue</p>
+        <header className="login-card-header">
+          <h1 className="login-brand">Assets</h1>
+          <p className="type-caption">Sign in to your places</p>
+        </header>
 
-        <label className="flex flex-col gap-1.5">
+        <label className="login-field">
           <span className="type-caption">Email</span>
           <input
             type="email"
@@ -103,7 +179,7 @@ export default function LoginPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="flat-input type-body"
+            className="flat-input type-body login-input"
             autoComplete="email"
             inputMode="email"
             autoCapitalize="none"
@@ -120,21 +196,25 @@ export default function LoginPage() {
           onChange={setPassword}
           required
           autoComplete="current-password"
+          className="login-field"
+          inputClassName="login-input"
         />
 
         {error ? (
-          <p className="type-caption text-[var(--danger)] flat-shake">{error}</p>
+          <p className="type-caption text-[var(--danger)] flat-shake" role="alert">
+            {error}
+          </p>
         ) : null}
 
         <button
           type="submit"
           disabled={busy}
-          className="btn-flat-primary w-full h-9 text-[14px] font-semibold disabled:opacity-40"
+          className="btn-flat-primary login-submit disabled:opacity-40"
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>
 
-        <p className="type-caption text-center">
+        <p className="type-caption login-footer">
           No account? Contact your admin.
         </p>
       </form>

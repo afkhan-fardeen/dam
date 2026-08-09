@@ -4,15 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
-  IconClock,
   IconFolder,
-  IconFolders,
   IconKey,
-  IconLock,
   IconLogout,
+  IconMenu2,
   IconSettings,
-  IconStar,
-  IconTrash,
   IconUpload,
   IconUser,
 } from "@tabler/icons-react";
@@ -31,9 +27,10 @@ import { UploadProgressPanel } from "@/components/UploadProgressPanel";
 import { PasswordField } from "@/components/PasswordField";
 import { CommandBar } from "@/components/CommandBar";
 import { TopBar } from "@/components/ui/TopBar";
-import { Dock, type DockItem } from "@/components/ui/Dock";
+import { AppSidebar } from "@/components/ui/AppSidebar";
 import { Menu } from "@/components/ui/Menu";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { SearchField } from "@/components/ui/SearchField";
 import { navigateWithTransition } from "@/components/ui/useViewTransitionNavigate";
 import { readLastPlace } from "@/lib/lastPlace";
@@ -79,7 +76,6 @@ export function DriveShell({
   const editable = canEdit(role, profile.is_admin);
   const view = searchParams.get("view") || "all";
   const onHome = pathname === "/";
-  const onBrowse = pathname === "/browse";
   const onSearch = pathname === "/search";
   const onAdmin = pathname.startsWith("/admin");
   const onEntity = pathname.startsWith("/e/");
@@ -105,17 +101,20 @@ export function DriveShell({
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
-  const [dockToast, setDockToast] = useState<string | null>(null);
+  const [actionToast, setActionToast] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const showSidebar = !onEntity;
 
   useEffect(() => {
     setQuery(searchParams.get("q") || "");
   }, [searchParams]);
 
   useEffect(() => {
-    if (!dockToast) return;
-    const id = window.setTimeout(() => setDockToast(null), 2800);
+    if (!actionToast) return;
+    const id = window.setTimeout(() => setActionToast(null), 2800);
     return () => window.clearTimeout(id);
-  }, [dockToast]);
+  }, [actionToast]);
 
   function uploadBlockedReason(): string | undefined {
     if (serverStatus === "checking") return "Checking PC…";
@@ -193,7 +192,7 @@ export function DriveShell({
           const r = roleForSpace(memberships, s.id, profile.is_admin);
           return canEdit(r, profile.is_admin);
         })
-        .map((s) => ({ id: s.id, name: s.name })),
+        .map((s) => ({ id: s.id, name: s.name, slug: s.slug })),
     [spaces, memberships, profile.is_admin],
   );
 
@@ -227,140 +226,24 @@ export function DriveShell({
     uploadSpace?.name,
   ]);
 
-  const dockItems: DockItem[] = useMemo(() => {
-    if (onAdmin) {
-      const tabs = [
-        { id: "spaces", label: "Spaces", href: "/admin/spaces" },
-        { id: "users", label: "Users", href: "/admin/users" },
-        { id: "tags", label: "Tags", href: "/admin/tags" },
-        { id: "entities", label: "Entities", href: "/admin/entities" },
-        { id: "attributes", label: "Attributes", href: "/admin/attributes" },
-        { id: "activity", label: "Activity", href: "/admin/activity" },
-      ];
-      return tabs.map((t) => ({
-        ...t,
-        primary: pathname.startsWith(t.href),
-        active: pathname.startsWith(t.href),
-      }));
-    }
-
-    const uploadItem = (opts: {
-      onClick: () => void;
-      extraDisabled?: boolean;
-    }): DockItem => ({
-      id: "upload",
-      label: "Upload",
-      icon: <IconUpload size={15} stroke={1.75} />,
-      primary: true,
-      breathe: true,
-      disabled: !canShellUpload || Boolean(opts.extraDisabled),
-      title: uploadTitle,
-      onClick: opts.onClick,
-      onDisabledClick: () => {
-        if (uploadTitle) setDockToast(uploadTitle);
-      },
-    });
-
-    if (onSearch) {
-      return [
-        uploadItem({
-          onClick: () => openUpload(defaultUploadSpaceId),
-        }),
-        {
-          id: "new-search",
-          label: "New Search",
-          onClick: () => {
-            setQuery("");
-            navigateWithTransition(router, "/");
-          },
-        },
-      ];
-    }
-
-    if (activeSlug) {
-      const items: DockItem[] = [
-        uploadItem({
-          onClick: () => openUpload(activeSpace?.id ?? defaultUploadSpaceId),
-          extraDisabled: !editable,
-        }),
-        {
-          id: "folder",
-          label: "New folder",
-          icon: <IconFolder size={15} stroke={1.75} />,
-          disabled: !editable,
-          onClick: () => requestNewFolder(),
-        },
-        {
-          id: "home",
-          label: "Home",
-          href: "/",
-        },
-      ];
-      if (showTrash) {
-        items.push({
-          id: "trash",
-          label: "Trash",
-          icon: <IconTrash size={15} stroke={1.75} />,
-          href: "/?view=trash",
-          active: view === "trash",
-        });
-      }
-      return items;
-    }
-
-    // Home / Browse / Favorites / Recents — Settings lives under avatar
-    return [
-      uploadItem({
-        onClick: () => openUpload(defaultUploadSpaceId),
-      }),
-      {
-        id: "browse",
-        label: "Browse",
-        icon: <IconFolders size={15} stroke={1.75} />,
-        href: "/browse",
-        active: onBrowse,
-      },
-      {
-        id: "recent",
-        label: "Recents",
-        icon: <IconClock size={15} stroke={1.75} />,
-        href: "/?view=recent",
-        active: view === "recent",
-      },
-      {
-        id: "favorites",
-        label: "Favorites",
-        icon: <IconStar size={15} stroke={1.75} />,
-        href: "/?view=favorites",
-        active: view === "favorites",
-      },
-    ];
-  }, [
-    onAdmin,
-    onSearch,
-    onBrowse,
-    activeSlug,
-    activeSpace,
-    pathname,
-    canShellUpload,
-    editable,
-    defaultUploadSpaceId,
-    uploadTitle,
-    showTrash,
-    view,
-    router,
-    openUpload,
-    requestNewFolder,
-  ]);
-
   const avatarTrigger = (
-    <span className="inline-flex items-center justify-center h-8 w-8 rounded-[6px] surface text-[11px] font-semibold text-[var(--ink)]">
+    <span className="inline-flex items-center justify-center h-8 w-8 rounded-[6px] border border-[rgba(60,60,67,0.12)] bg-[#fafafa] text-[11px] font-medium text-[var(--ink)]">
       {initials || <IconUser size={14} />}
     </span>
   );
 
+  const showTopSearch = !onAdmin && !onEntity;
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname, searchParams]);
+
   return (
-    <div className="min-h-screen flex flex-col relative bg-[var(--bg)]">
+    <div
+      className={`app-shell min-h-screen flex flex-col relative bg-[var(--bg)]${
+        showSidebar ? " has-sidebar" : ""
+      }`}
+    >
       {viewingAs ? (
         <div className="shrink-0 surface mx-3 mt-2 px-4 py-2 flex items-center justify-between gap-3 type-body">
           <span>
@@ -373,80 +256,133 @@ export function DriveShell({
       ) : null}
 
       <TopBar
-        brandLabel=""
+        brandLabel="Assets"
+        brandHref="/"
         serverStatus={serverStatus}
-        trailing={
-          <Menu trigger={avatarTrigger}>
-            {profile.is_admin ? (
-              <Link href="/admin/spaces" className="menu-row">
-                <IconSettings size={15} /> Admin
-              </Link>
-            ) : null}
+        leading={
+          showSidebar ? (
             <button
               type="button"
-              className="menu-row"
-              onClick={() => {
-                setPasswordOpen(true);
-                setPasswordMsg(null);
-              }}
+              className="topbar-menu-btn"
+              aria-label="Open navigation"
+              onClick={() => setSidebarOpen(true)}
             >
-              <IconKey size={15} /> Settings
+              <IconMenu2 size={20} stroke={1.75} />
             </button>
-            <div className="card-divider" />
-            <button
-              type="button"
-              className="menu-row menu-row-danger"
-              onClick={() => void signOut()}
-            >
-              <IconLogout size={15} /> Sign out
-            </button>
-          </Menu>
+          ) : undefined
         }
-      />
-
-      {!showHomeHero && !onEntity ? (
-        <div className="px-4 sm:px-6 pb-3 max-w-3xl mx-auto w-full">
-          {onSearch || onBrowse || (!onAdmin && !activeSlug) ? (
+        center={
+          showTopSearch ? (
             <SearchField
               value={query}
               onChange={setQuery}
               onSubmit={submitSearch}
               onClear={clearSearch}
               placeholder="Search files and folders…"
-              showCmdK={onSearch}
+              showCmdK={!showHomeHero}
               slim
             />
-          ) : activeSlug ? (
-            <div className="flex items-center gap-2 type-title">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: activeSpace?.color }}
-              />
-              {activeSpace?.name}
-              {activeSpace?.requires_passcode ? (
-                <IconLock size={14} className="text-[var(--ink-faint)]" />
+          ) : null
+        }
+        trailing={
+          <div className="topbar-actions">
+            {!onAdmin && !onEntity ? (
+              <>
+                {activeSlug ? (
+                  <button
+                    type="button"
+                    className={`topbar-action-btn${!editable ? " is-disabled" : ""}`}
+                    aria-disabled={!editable}
+                    title={editable ? "New folder" : "View only"}
+                    onClick={() => {
+                      if (!editable) {
+                        setActionToast("View only — ask an editor");
+                        return;
+                      }
+                      requestNewFolder();
+                    }}
+                  >
+                    <IconFolder size={16} stroke={1.75} />
+                    <span className="topbar-action-label">New folder</span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={`topbar-action-btn topbar-action-btn--primary${
+                    !(canShellUpload && (!activeSlug || editable))
+                      ? " is-disabled"
+                      : ""
+                  }`}
+                  aria-disabled={!(canShellUpload && (!activeSlug || editable))}
+                  title={uploadTitle || "Upload"}
+                  onClick={() => {
+                    if (!(canShellUpload && (!activeSlug || editable))) {
+                      if (uploadTitle) setActionToast(uploadTitle);
+                      return;
+                    }
+                    openUpload(activeSpace?.id ?? defaultUploadSpaceId);
+                  }}
+                >
+                  <IconUpload size={16} stroke={1.75} />
+                  <span className="topbar-action-label">Upload</span>
+                </button>
+              </>
+            ) : null}
+            <Menu trigger={avatarTrigger}>
+              {profile.is_admin ? (
+                <Link href="/admin/spaces" className="menu-row">
+                  <IconSettings size={15} /> Admin
+                </Link>
               ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+              <button
+                type="button"
+                className="menu-row"
+                onClick={() => {
+                  setPasswordOpen(true);
+                  setPasswordMsg(null);
+                }}
+              >
+                <IconKey size={15} /> Settings
+              </button>
+              <div className="card-divider" />
+              <button
+                type="button"
+                className="menu-row menu-row-danger"
+                onClick={() => void signOut()}
+              >
+                <IconLogout size={15} /> Sign out
+              </button>
+            </Menu>
+          </div>
+        }
+      />
 
-      <main
-        className={`flat-content-root flex-1 min-w-0 ${
-          showHomeHero ? "" : "overflow-auto pb-20 px-4 sm:px-6"
-        }`}
-      >
-        {children}
-      </main>
+      <div className="app-body flex-1 min-h-0 flex relative">
+        {showSidebar ? (
+          <AppSidebar
+            spaces={spaces}
+            showTrash={showTrash}
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            mode={onAdmin ? "admin" : "employee"}
+          />
+        ) : null}
 
-      {!onEntity ? <Dock items={dockItems} /> : null}
+        <main
+          className={`flat-content-root flex-1 min-w-0 ${
+            showHomeHero ? "" : "overflow-auto pb-6 px-4 sm:px-6"
+          }`}
+        >
+          {children}
+        </main>
+      </div>
 
-      {dockToast ? (
+      {actionToast ? (
         <div
-          className="fixed bottom-[calc(var(--dock-h)+12px)] left-1/2 -translate-x-1/2 z-[55] surface flat-fade px-4 py-2.5 type-caption text-[var(--ink)] max-w-[min(90vw,20rem)] text-center"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[55] surface flat-fade px-4 py-2.5 type-caption text-[var(--ink)] max-w-[min(90vw,20rem)] text-center"
           role="status"
         >
-          {dockToast}
+          {actionToast}
         </div>
       ) : null}
 
@@ -463,64 +399,31 @@ export function DriveShell({
         <UploadForm
           spaceId={shellUploadSpaceId}
           spaceName={uploadSpaceName}
+          spaceSlug={
+            uploadSpace?.slug ||
+            activeSpace?.slug ||
+            editableDestinations.find((d) => d.id === shellUploadSpaceId)
+              ?.slug ||
+            ""
+          }
           folderId={uploadFolderId}
           folderName={uploadFolderName}
-          destinationOptions={
-            activeSlug ? undefined : editableDestinations
-          }
-          onDestinationChange={
-            activeSlug
-              ? undefined
-              : (id) => openUpload(id)
-          }
+          destinationOptions={editableDestinations}
           defaultCreatedBy={profile.full_name || profile.email || ""}
           onCancel={() => closeUpload()}
-          onUploaded={() => {
+          onStarted={() => {
             closeUpload();
-            router.refresh();
           }}
         />
       ) : null}
 
       {passwordOpen ? (
-        <dialog
-          className="modal modal-open"
-          onCancel={(e) => {
-            e.preventDefault();
-            setPasswordOpen(false);
-          }}
-        >
-          <div className="flat-scrim absolute inset-0 pointer-events-none" />
-          <form
-            method="dialog"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={changePassword}
-            className="modal-box surface flat-fade flex flex-col gap-3 !bg-[var(--surface)] !border ![border-color:var(--line)] shadow-none"
-            style={{ borderRadius: 6 }}
-          >
-            <div className="flex items-center gap-2">
-              <h2 className="type-title flex-1">Change password</h2>
-              <button
-                type="button"
-                aria-label="Close"
-                className="dock-btn !px-2"
-                onClick={() => setPasswordOpen(false)}
-              >
-                ×
-              </button>
-            </div>
-            <PasswordField
-              label="New password"
-              value={newPassword}
-              onChange={setNewPassword}
-              required
-              minLength={8}
-              autoComplete="new-password"
-            />
-            {passwordMsg ? (
-              <p className="type-caption">{passwordMsg}</p>
-            ) : null}
-            <div className="flex justify-end gap-2 mt-2">
+        <Modal
+          title="Change password"
+          onClose={() => setPasswordOpen(false)}
+          onSubmit={changePassword}
+          footer={
+            <>
               <Button
                 variant="secondary"
                 onClick={() => setPasswordOpen(false)}
@@ -528,16 +431,23 @@ export function DriveShell({
                 Cancel
               </Button>
               <Button variant="primary" type="submit">
-                Save
+                Update password
               </Button>
-            </div>
-          </form>
-          <form method="dialog" className="modal-backdrop bg-transparent">
-            <button type="button" onClick={() => setPasswordOpen(false)}>
-              close
-            </button>
-          </form>
-        </dialog>
+            </>
+          }
+        >
+          <PasswordField
+            label="New password"
+            value={newPassword}
+            onChange={setNewPassword}
+            required
+            minLength={8}
+            autoComplete="new-password"
+          />
+          {passwordMsg ? (
+            <p className="type-caption">{passwordMsg}</p>
+          ) : null}
+        </Modal>
       ) : null}
     </div>
   );

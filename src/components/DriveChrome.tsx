@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -12,18 +13,49 @@ import {
   useFileServerHealth,
   type ServerStatus,
 } from "@/lib/useFileServerHealth";
+import { uploadFileWithProgress } from "@/lib/upload";
+import type { Folder } from "@/lib/types";
 
 export type TransferJob = {
   id: string;
   name: string;
   progress: number;
   kind: "upload" | "download";
-  status: "uploading" | "downloading" | "saving" | "done" | "error";
+  status: "queued" | "uploading" | "downloading" | "saving" | "done" | "error";
   error?: string;
+  /** Where to open after a successful upload */
+  viewHref?: string;
+  viewLabel?: string;
 };
 
 /** @deprecated Use TransferJob */
 export type UploadJob = TransferJob;
+
+export type UploadEnqueueItem = {
+  file: File;
+  spaceId: string;
+  folderId: string | null;
+  tags?: string[];
+  description?: string | null;
+  brand?: string | null;
+  createdBy?: string | null;
+  entityIds?: string[];
+  viewHref?: string;
+  viewLabel?: string;
+};
+
+/** Registered by SpaceWorkspace so the global sidebar can show the folder tree */
+export type PlaceNavState = {
+  spaceSlug: string;
+  spaceName: string;
+  spaceId: string;
+  folders: Folder[];
+  currentFolderId: string | null;
+  onNavigateFolder: (folderId: string | null) => void;
+  onPrefetchFolder?: (folderId: string | null) => void;
+};
+
+type QueuedUpload = UploadEnqueueItem & { jobId: string };
 
 type DriveChromeContextValue = {
   uploadRequestId: number;
@@ -42,6 +74,19 @@ type DriveChromeContextValue = {
   jobs: TransferJob[];
   upsertJob: (job: TransferJob) => void;
   removeJob: (id: string) => void;
+  clearSettledJobs: () => void;
+  /** Persistent upload queue — survives modal close + navigation */
+  enqueueUploads: (items: UploadEnqueueItem[]) => void;
+  /**
+   * Bumps when library content changes (uploads, new folders, etc.).
+   * Place/file views subscribe and soft-reload — no full page refresh.
+   */
+  libraryEpoch: number;
+  notifyLibraryChange: () => void;
+  transferPanelOpen: boolean;
+  setTransferPanelOpen: (open: boolean) => void;
+  placeNav: PlaceNavState | null;
+  setPlaceNav: (nav: PlaceNavState | null) => void;
 };
 
 const DriveChromeContext = createContext<DriveChromeContextValue | null>(null);
@@ -52,7 +97,17 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadSpaceId, setUploadSpaceId] = useState<string | null>(null);
   const [jobs, setJobs] = useState<TransferJob[]>([]);
+  const [placeNav, setPlaceNav] = useState<PlaceNavState | null>(null);
+  const [transferPanelOpen, setTransferPanelOpen] = useState(false);
+  const [libraryEpoch, setLibraryEpoch] = useState(0);
   const serverStatus = useFileServerHealth();
+
+  const queueRef = useRef<QueuedUpload[]>([]);
+  const pumpingRef = useRef(false);
+
+  const notifyLibraryChange = useCallback(() => {
+    setLibraryEpoch((n) => n + 1);
+  }, []);
 
   const openUpload = useCallback((spaceId?: string | null) => {
     if (spaceId) setUploadSpaceId(spaceId);
@@ -87,6 +142,136 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
     setJobs((prev) => prev.filter((j) => j.id !== id));
   }, []);
 
+  const clearSettledJobs = useCallback(() => {
+    setJobs((prev) =>
+      prev.filter(
+        (j) =>
+          j.status === "queued" ||
+          j.status === "uploading" ||
+          j.status === "downloading" ||
+          j.status === "saving",
+      ),
+    );
+  }, []);
+
+  const pumpUploads = useCallback(async () => {
+    if (pumpingRef.current) return;
+    pumpingRef.current = true;
+
+    while (queueRef.current.length > 0) {
+      const item = queueRef.current.shift()!;
+      const {
+        jobId,
+        file,
+        spaceId,
+        folderId,
+        tags,
+        description,
+        brand,
+        createdBy,
+        entityIds,
+        viewHref,
+        viewLabel,
+      } = item;
+
+      upsertJob({
+        id: jobId,
+        name: file.name,
+        progress: 0,
+        kind: "upload",
+        status: "uploading",
+        viewHref,
+        viewLabel,
+      });
+
+      try {
+        const asset = await uploadFileWithProgress({
+          file,
+          spaceId,
+          folderId,
+          tags,
+          description,
+          brand,
+          createdBy,
+          onProgress: (pct) =>
+            upsertJob({
+              id: jobId,
+              name: file.name,
+              progress: pct,
+              kind: "upload",
+              status: pct >= 100 ? "saving" : "uploading",
+              viewHref,
+              viewLabel,
+            }),
+        });
+
+        if (asset?.id && entityIds?.length) {
+          await Promise.all(
+            entityIds.map((entityId) =>
+              fetch(`/api/assets/${asset.id}/entities`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ entity_id: entityId }),
+              }).catch(() => null),
+            ),
+          );
+        }
+
+        upsertJob({
+          id: jobId,
+          name: file.name,
+          progress: 100,
+          kind: "upload",
+          status: "done",
+          viewHref,
+          viewLabel,
+        });
+        notifyLibraryChange();
+      } catch (err) {
+        upsertJob({
+          id: jobId,
+          name: file.name,
+          progress: 0,
+          kind: "upload",
+          status: "error",
+          error: err instanceof Error ? err.message : "Upload failed",
+          viewHref,
+          viewLabel,
+        });
+      }
+    }
+
+    pumpingRef.current = false;
+  }, [notifyLibraryChange, upsertJob]);
+
+  const enqueueUploads = useCallback(
+    (items: UploadEnqueueItem[]) => {
+      if (items.length === 0) return;
+      const queued: QueuedUpload[] = items.map((item, index) => {
+        const jobId = `up-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
+        return { ...item, jobId };
+      });
+
+      setJobs((prev) => [
+        ...prev,
+        ...queued.map((q) => ({
+          id: q.jobId,
+          name: q.file.name,
+          progress: 0,
+          kind: "upload" as const,
+          status: "queued" as const,
+          viewHref: q.viewHref,
+          viewLabel: q.viewLabel,
+        })),
+      ]);
+
+      queueRef.current.push(...queued);
+      setTransferPanelOpen(true);
+      void pumpUploads();
+    },
+    [pumpUploads],
+  );
+
   const value = useMemo(
     () => ({
       uploadRequestId,
@@ -102,6 +287,14 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       jobs,
       upsertJob,
       removeJob,
+      clearSettledJobs,
+      enqueueUploads,
+      libraryEpoch,
+      notifyLibraryChange,
+      transferPanelOpen,
+      setTransferPanelOpen,
+      placeNav,
+      setPlaceNav,
     }),
     [
       uploadRequestId,
@@ -116,6 +309,12 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       jobs,
       upsertJob,
       removeJob,
+      clearSettledJobs,
+      enqueueUploads,
+      libraryEpoch,
+      notifyLibraryChange,
+      transferPanelOpen,
+      placeNav,
     ],
   );
 

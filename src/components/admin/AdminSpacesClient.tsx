@@ -5,6 +5,7 @@ import type { Space } from "@/lib/types";
 import { SPACE_COLOR_PRESETS } from "@/lib/categories";
 import { AdminTabs } from "@/components/admin/AdminTabs";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { Button } from "@/components/ui/Button";
 import { PasswordField } from "@/components/PasswordField";
 import { ConfirmModal } from "@/components/ConfirmModal";
 
@@ -295,21 +296,20 @@ export function AdminSpacesClient() {
           onClose={() => setModalOpen(false)}
           footer={
             <>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={() => setModalOpen(false)}
-                className="btn btn-ghost"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
                 type="submit"
                 form="space-form"
                 disabled={busy}
-                className="btn btn-primary"
               >
                 {busy ? "Saving…" : editing ? "Save" : "Create space"}
-              </button>
+              </Button>
             </>
           }
         >
@@ -419,21 +419,20 @@ export function AdminSpacesClient() {
           onClose={() => setDeleteTarget(null)}
           footer={
             <>
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={() => setDeleteTarget(null)}
-                className="btn btn-ghost"
               >
                 Cancel
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="destructive"
                 type="submit"
                 form="delete-space-form"
                 disabled={busy || confirmName !== deleteTarget.name}
-                className="btn btn-error"
               >
                 {busy ? "Deleting…" : "Delete forever"}
-              </button>
+              </Button>
             </>
           }
         >

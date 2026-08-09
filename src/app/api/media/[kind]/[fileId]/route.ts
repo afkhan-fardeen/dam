@@ -89,7 +89,15 @@ export async function GET(request: Request, context: RouteContext) {
     );
   }
 
-  if (kind === "asset" && upstream.status === 200 && !range) {
+  // Only count intentional downloads — not lightbox / <img> / <video> previews.
+  const wantsDownload =
+    new URL(request.url).searchParams.get("download") === "1";
+  if (
+    kind === "asset" &&
+    wantsDownload &&
+    upstream.status === 200 &&
+    !range
+  ) {
     await logActivity(
       {
         user_id: user.id,
@@ -109,7 +117,13 @@ export async function GET(request: Request, context: RouteContext) {
 
   const headers = new Headers();
   headers.set("Content-Type", contentType);
-  headers.set("Cache-Control", "private, max-age=60");
+  // Thumbnails are tiny and browsed rapidly — cache longer in the browser.
+  headers.set(
+    "Cache-Control",
+    kind === "thumbnail"
+      ? "private, max-age=3600, stale-while-revalidate=86400"
+      : "private, max-age=300, stale-while-revalidate=3600",
+  );
 
   const contentLength = upstream.headers.get("content-length");
   if (contentLength) headers.set("Content-Length", contentLength);

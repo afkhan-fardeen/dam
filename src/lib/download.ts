@@ -37,7 +37,7 @@ export async function queueAssetDownload(
   });
   try {
     await downloadFileWithProgress({
-      url: `/api/media/asset/${encodeURIComponent(fileId)}`,
+      url: `/api/media/asset/${encodeURIComponent(fileId)}?download=1`,
       fileName: name,
       onProgress: (pct) =>
         upsertJob({

@@ -52,7 +52,7 @@ export function PasswordField({
           autoComplete={autoComplete}
           autoFocus={autoFocus}
           disabled={disabled}
-          className={`glass-input type-body py-2 pr-10 w-full ${inputClassName}`}
+          className={`flat-input type-body pr-10 w-full ${inputClassName}`}
         />
         <button
           type="button"
@@ -67,7 +67,7 @@ export function PasswordField({
             e.stopPropagation();
             setShow((v) => !v);
           }}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 text-[var(--ink-faint)] hover:text-[var(--ink)]"
+          className="absolute right-1 top-1/2 -translate-y-1/2 z-10 p-2 rounded-[6px] text-[var(--ink-faint)] hover:text-[var(--ink)] hover:bg-[var(--surface-2)]"
         >
           {show ? <IconEyeOff size={16} /> : <IconEye size={16} />}
         </button>

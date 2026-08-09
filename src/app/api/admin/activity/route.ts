@@ -102,6 +102,24 @@ function summarize(
           : "a role";
       return `${who} set ${target} to ${role}${space ? ` on ${space}` : ""}`;
     }
+    case "update_user": {
+      const target =
+        personName(profiles, row.target_id) !== "Someone"
+          ? personName(profiles, row.target_id)
+          : detailStr(details, "email") || "a user";
+      return `${who} updated ${target}`;
+    }
+    case "delete_user": {
+      const email = detailStr(details, "email") || "a user";
+      return `${who} permanently deleted ${email}`;
+    }
+    case "reset_password": {
+      const target =
+        personName(profiles, row.target_id) !== "Someone"
+          ? personName(profiles, row.target_id)
+          : "a user";
+      return `${who} reset password for ${target}`;
+    }
     default:
       return `${who} performed ${row.action}${inSpace}`;
   }

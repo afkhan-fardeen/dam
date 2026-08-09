@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { AdminTabs } from "@/components/admin/AdminTabs";
 import { AdminModal } from "@/components/admin/AdminModal";
+import { Button } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { entityTypeColor } from "@/components/EntityChip";
 import type { Entity, EntityType } from "@/lib/types";

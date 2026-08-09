@@ -12,7 +12,8 @@ export default async function AdminUsersPage() {
         Users
       </h1>
       <p className="type-caption mt-1 mb-2">
-        Accounts and space roles. Deactivated people stay in the list, dimmed.
+        Edit people, place roles, admin access, or delete accounts permanently.
+        Deactivated people stay in the list, dimmed.
       </p>
       <AdminUsersClient />
     </div>

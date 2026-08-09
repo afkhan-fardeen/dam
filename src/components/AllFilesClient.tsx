@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AssetCard, type AssetMenuAction } from "@/components/AssetCard";
 import { AssetDetail } from "@/components/AssetDetail";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { MoveAssetModal } from "@/components/MoveAssetModal";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { GlassSkeleton } from "@/components/glass/GlassSkeleton";
 import { canDownload, canEdit, type Asset, type Folder, type Space, type SpaceMembership } from "@/lib/types";
 import { roleForSpace } from "@/lib/auth-client";
@@ -27,7 +29,7 @@ export function AllFilesClient({
 }: AllFilesClientProps) {
   const searchParams = useSearchParams();
   const view = searchParams.get("view") || "all";
-  const { upsertJob, removeJob } = useDriveChrome();
+  const { upsertJob, removeJob, libraryEpoch } = useDriveChrome();
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,8 +91,8 @@ export function AllFilesClient({
           ? "Favorites"
           : "All files";
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
@@ -107,13 +109,20 @@ export function AllFilesClient({
       setError(err instanceof Error ? err.message : "Could not load files.");
       setAssets([]);
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   }, [view]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const libraryEpochSeen = useRef(libraryEpoch);
+  useEffect(() => {
+    if (libraryEpoch === libraryEpochSeen.current) return;
+    libraryEpochSeen.current = libraryEpoch;
+    void load({ quiet: true });
+  }, [libraryEpoch, load]);
 
   function changeViewMode(mode: ViewMode) {
     setViewMode(mode);
@@ -356,7 +365,6 @@ export function AllFilesClient({
 
       {selected ? (
         <AssetDetail
-          key={`${selected.id}-${detailLaunch.move ? "move" : "view"}`}
           asset={selected}
           folders={detailFolders}
           canDownload={
@@ -435,50 +443,40 @@ export function AllFilesClient({
       ) : null}
 
       {renameTarget ? (
-        <dialog
-          className="modal modal-open"
-          onCancel={(e) => {
-            e.preventDefault();
-            setRenameTarget(null);
-          }}
+        <Modal
+          title="Rename file"
+          onClose={() => setRenameTarget(null)}
+          closeDisabled={confirmBusy}
+          onSubmit={confirmRename}
+          footer={
+            <>
+              <Button
+                variant="secondary"
+                disabled={confirmBusy}
+                onClick={() => setRenameTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                type="submit"
+                disabled={confirmBusy || !renameValue.trim()}
+              >
+                {confirmBusy ? "Saving…" : "Rename"}
+              </Button>
+            </>
+          }
         >
-          <div className="glass-scrim absolute inset-0 pointer-events-none" />
-          <form
-            onSubmit={confirmRename}
-            onClick={(e) => e.stopPropagation()}
-            className="modal-box max-w-sm glass-content glass-appear !bg-[var(--content-glass)] border-0 shadow-none"
-            style={{ borderRadius: 22 }}
-          >
-            <h3 className="type-title mb-3">Rename file</h3>
+          <label className="flat-modal-field">
+            <span className="flat-modal-label">Name</span>
             <input
               autoFocus
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
-              className="glass-input w-full type-body px-3 py-2 rounded-[12px] bg-white/55"
+              className="flat-input"
             />
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                type="button"
-                className="btn-glass"
-                onClick={() => setRenameTarget(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn-glass-primary"
-                disabled={confirmBusy || !renameValue.trim()}
-              >
-                Save
-              </button>
-            </div>
-          </form>
-          <form method="dialog" className="modal-backdrop bg-transparent">
-            <button type="button" onClick={() => setRenameTarget(null)}>
-              close
-            </button>
-          </form>
-        </dialog>
+          </label>
+        </Modal>
       ) : null}
 
       {moveTarget?.space_id ? (

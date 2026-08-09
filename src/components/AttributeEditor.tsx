@@ -12,6 +12,8 @@ function display(
   return displayAttributeValue(def, row);
 }
 
+const defsCache = new Map<string, AttributeDef[]>();
+
 type AttributeEditorProps = {
   assetId: string;
   canEdit: boolean;
@@ -43,16 +45,20 @@ export function AttributeEditor({
       try {
         const params = new URLSearchParams();
         if (spaceKind) params.set("space_kind", spaceKind);
-        const [defsRes, valsRes] = await Promise.all([
-          fetch(`/api/attribute-defs?${params}`),
-          fetch(`/api/assets/${assetId}/attributes`),
-        ]);
-        const defsJson = await defsRes.json();
+        const defsKey = spaceKind || "all";
+
+        const valsRes = await fetch(`/api/assets/${assetId}/attributes`);
         const valsJson = await valsRes.json();
         if (cancelled) return;
-        const nextDefs = (defsJson.defs ??
-          valsJson.defs ??
-          []) as AttributeDef[];
+
+        let nextDefs = defsCache.get(defsKey);
+        if (!nextDefs) {
+          const defsRes = await fetch(`/api/attribute-defs?${params}`);
+          const defsJson = await defsRes.json();
+          nextDefs = (defsJson.defs ?? valsJson.defs ?? []) as AttributeDef[];
+          defsCache.set(defsKey, nextDefs);
+        }
+
         setDefs(nextDefs);
         const map: typeof values = {};
         const d: Record<string, string> = {};

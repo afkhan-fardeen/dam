@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireAdmin, logActivity } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import type { SpaceRole } from "@/lib/types";
@@ -17,8 +18,16 @@ type InviteBody = {
   memberships?: MembershipInput[];
 };
 
+async function countActiveAdmins(supabase: SupabaseClient) {
+  const { data } = await supabase
+    .from("profiles")
+    .select("id,is_active")
+    .eq("is_admin", true);
+  return (data ?? []).filter((p) => p.is_active !== false).length;
+}
+
 export async function GET(request: Request) {
-  const { ok, supabase } = await requireAdmin(request);
+  const { ok, user, supabase } = await requireAdmin(request);
   if (!ok) {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
@@ -39,6 +48,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     users: profiles ?? [],
     memberships: memberships ?? [],
+    me: user?.id ?? null,
   });
 }
 
@@ -128,6 +138,8 @@ export async function PATCH(request: Request) {
 
   const body = (await request.json()) as {
     user_id?: string;
+    full_name?: string;
+    email?: string;
     memberships?: MembershipInput[];
     is_admin?: boolean;
     is_active?: boolean;
@@ -139,6 +151,45 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Missing user id" }, { status: 400 });
   }
 
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("id,email,full_name,is_admin,is_active")
+    .eq("id", body.user_id)
+    .maybeSingle();
+
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const admin = getSupabaseAdmin();
+  const profilePatch: {
+    full_name?: string;
+    email?: string;
+    is_admin?: boolean;
+    is_active?: boolean;
+  } = {};
+
+  if (typeof body.full_name === "string") {
+    profilePatch.full_name = body.full_name.trim();
+  }
+
+  if (typeof body.email === "string") {
+    const email = body.email.trim().toLowerCase();
+    if (!email) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    }
+    if (email !== (target.email || "").toLowerCase()) {
+      const { error: emailError } = await admin.auth.admin.updateUserById(
+        body.user_id,
+        { email, email_confirm: true },
+      );
+      if (emailError) {
+        return NextResponse.json({ error: emailError.message }, { status: 400 });
+      }
+      profilePatch.email = email;
+    }
+  }
+
   if (typeof body.password === "string") {
     if (body.password.length < 8) {
       return NextResponse.json(
@@ -146,7 +197,6 @@ export async function PATCH(request: Request) {
         { status: 400 },
       );
     }
-    const admin = getSupabaseAdmin();
     const { error: pwError } = await admin.auth.admin.updateUserById(
       body.user_id,
       { password: body.password },
@@ -166,17 +216,63 @@ export async function PATCH(request: Request) {
   }
 
   if (typeof body.is_admin === "boolean") {
-    await supabase
-      .from("profiles")
-      .update({ is_admin: body.is_admin })
-      .eq("id", body.user_id);
+    if (body.is_admin === false && target.is_admin) {
+      if (body.user_id === user.id) {
+        return NextResponse.json(
+          { error: "You can’t remove your own admin access." },
+          { status: 400 },
+        );
+      }
+      const admins = await countActiveAdmins(supabase);
+      if (admins <= 1) {
+        return NextResponse.json(
+          { error: "Keep at least one active admin." },
+          { status: 400 },
+        );
+      }
+    }
+    profilePatch.is_admin = body.is_admin;
   }
 
   if (typeof body.is_active === "boolean") {
-    await supabase
+    if (body.is_active === false) {
+      if (body.user_id === user.id) {
+        return NextResponse.json(
+          { error: "You can’t deactivate your own account." },
+          { status: 400 },
+        );
+      }
+      if (target.is_admin) {
+        const admins = await countActiveAdmins(supabase);
+        if (admins <= 1) {
+          return NextResponse.json(
+            { error: "Keep at least one active admin." },
+            { status: 400 },
+          );
+        }
+      }
+    }
+    profilePatch.is_active = body.is_active;
+  }
+
+  if (Object.keys(profilePatch).length > 0) {
+    const { error: profileError } = await supabase
       .from("profiles")
-      .update({ is_active: body.is_active })
+      .update(profilePatch)
       .eq("id", body.user_id);
+    if (profileError) {
+      return NextResponse.json({ error: profileError.message }, { status: 400 });
+    }
+    await logActivity(
+      {
+        user_id: user.id,
+        action: "update_user",
+        target_type: "user",
+        target_id: body.user_id,
+        details: profilePatch,
+      },
+      supabase,
+    );
   }
 
   if (body.remove_space_ids?.length) {
@@ -188,6 +284,9 @@ export async function PATCH(request: Request) {
   }
 
   for (const m of body.memberships ?? []) {
+    if (!m.space_id || !["viewer", "downloader", "editor"].includes(m.role)) {
+      continue;
+    }
     await supabase.from("space_memberships").upsert(
       {
         space_id: m.space_id,
@@ -208,6 +307,75 @@ export async function PATCH(request: Request) {
       supabase,
     );
   }
+
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(request: Request) {
+  const { ok, user, supabase } = await requireAdmin(request);
+  if (!ok || !user) {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
+
+  const body = (await request.json().catch(() => ({}))) as {
+    user_id?: string;
+  };
+  const userId =
+    body.user_id || new URL(request.url).searchParams.get("user_id") || "";
+
+  if (!userId) {
+    return NextResponse.json({ error: "Missing user id" }, { status: 400 });
+  }
+
+  if (userId === user.id) {
+    return NextResponse.json(
+      { error: "You can’t delete your own account." },
+      { status: 400 },
+    );
+  }
+
+  const { data: target } = await supabase
+    .from("profiles")
+    .select("id,email,full_name,is_admin,is_active")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!target) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  if (target.is_admin && target.is_active !== false) {
+    const admins = await countActiveAdmins(supabase);
+    if (admins <= 1) {
+      return NextResponse.json(
+        { error: "Keep at least one active admin." },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Clear memberships first (belt-and-suspenders; auth delete cascades profile)
+  await supabase.from("space_memberships").delete().eq("user_id", userId);
+
+  const admin = getSupabaseAdmin();
+  const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
+  if (deleteError) {
+    return NextResponse.json({ error: deleteError.message }, { status: 400 });
+  }
+
+  await logActivity(
+    {
+      user_id: user.id,
+      action: "delete_user",
+      target_type: "user",
+      target_id: userId,
+      details: {
+        email: target.email,
+        full_name: target.full_name,
+      },
+    },
+    supabase,
+  );
 
   return NextResponse.json({ ok: true });
 }

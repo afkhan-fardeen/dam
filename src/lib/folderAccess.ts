@@ -8,11 +8,35 @@ export type FolderLockInfo = {
   passcode_enabled: boolean;
 };
 
-/** Collect folder id + all ancestor ids. */
+/** Collect folder id + all ancestor ids (2 queries: folder + space tree). */
 export async function getFolderAncestorIds(
   supabase: SupabaseClient,
   folderId: string,
 ): Promise<string[]> {
+  const { data: folder } = await supabase
+    .from("folders")
+    .select("id,space_id,parent_folder_id")
+    .eq("id", folderId)
+    .maybeSingle<{
+      id: string;
+      space_id: string;
+      parent_folder_id: string | null;
+    }>();
+
+  if (!folder) return [];
+
+  const { data: spaceFolders } = await supabase
+    .from("folders")
+    .select("id,parent_folder_id")
+    .eq("space_id", folder.space_id);
+
+  const byId = new Map(
+    (spaceFolders ?? []).map((f) => [
+      f.id as string,
+      f.parent_folder_id as string | null,
+    ]),
+  );
+
   const ids: string[] = [];
   let current: string | null = folderId;
   const seen = new Set<string>();
@@ -20,13 +44,7 @@ export async function getFolderAncestorIds(
   while (current && !seen.has(current)) {
     seen.add(current);
     ids.push(current);
-    const parentId: string = current;
-    const { data } = await supabase
-      .from("folders")
-      .select("parent_folder_id")
-      .eq("id", parentId)
-      .maybeSingle<{ parent_folder_id: string | null }>();
-    current = data?.parent_folder_id ?? null;
+    current = byId.has(current) ? byId.get(current)! : null;
   }
 
   return ids;
