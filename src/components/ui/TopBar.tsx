@@ -1,47 +1,78 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
-import type { ServerStatus } from "@/lib/useFileServerHealth";
+import { useEffect, useState, type ReactNode } from "react";
 
 type TopBarProps = {
   brandHref?: string;
   brandLabel?: string;
-  /** e.g. mobile nav toggle */
+  /** e.g. mobile nav toggle / collapse */
   leading?: ReactNode;
-  /** Slim search field (center) */
+  /** Search or other primary control — left-aligned after leading */
+  search?: ReactNode;
+  /** @deprecated use search — kept for brief compat */
   center?: ReactNode;
   /** e.g. current place name */
   context?: ReactNode;
   trailing?: ReactNode;
-  serverStatus?: ServerStatus;
+  /** Show live date + time in the header */
+  showClock?: boolean;
 };
 
-function statusCopy(status: ServerStatus): { label: string; color: string } {
-  switch (status) {
-    case "connected":
-      return { label: "PC connected", color: "var(--ok)" };
-    case "checking":
-      return { label: "Checking PC…", color: "var(--ink-faint)" };
-    default:
-      return { label: "PC offline", color: "var(--danger)" };
-  }
+function formatClock(d: Date): { date: string; time: string } {
+  const date = d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  const time = d.toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return { date, time };
+}
+
+function HeaderClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const { date, time } = formatClock(now);
+
+  return (
+    <time
+      className="topbar-clock"
+      dateTime={now.toISOString()}
+      title={now.toLocaleString()}
+    >
+      <span className="topbar-clock-date">{date}</span>
+      <span className="topbar-clock-sep" aria-hidden>
+        ·
+      </span>
+      <span className="topbar-clock-time">{time}</span>
+    </time>
+  );
 }
 
 export function TopBar({
   brandHref = "/",
-  brandLabel = "Assets",
+  brandLabel = "",
   leading,
+  search,
   center,
   context,
   trailing,
-  serverStatus,
+  showClock = true,
 }: TopBarProps) {
-  const status = serverStatus ? statusCopy(serverStatus) : null;
+  const searchSlot = search ?? center;
+  const hasSearch = Boolean(searchSlot);
 
   return (
     <header
-      className={`topbar-flat${center ? "" : " topbar-flat--no-search"}`}
+      className={`topbar-flat${hasSearch ? " topbar-flat--search" : ""}`}
       style={{ viewTransitionName: "flat-topbar" }}
     >
       <div className="topbar-left">
@@ -52,30 +83,13 @@ export function TopBar({
           </Link>
         ) : null}
         {context ? <div className="topbar-context">{context}</div> : null}
+        {hasSearch ? (
+          <div className="topbar-search">{searchSlot}</div>
+        ) : null}
       </div>
 
-      {center ? <div className="topbar-center">{center}</div> : <div />}
-
       <div className="topbar-right">
-        {status ? (
-          <div
-            className="topbar-status"
-            title={
-              status.label === "PC offline"
-                ? "File server unavailable — uploads and previews may fail"
-                : status.label === "PC connected"
-                  ? "File server is online"
-                  : "Checking file server…"
-            }
-          >
-            <span
-              className="topbar-status-dot"
-              style={{ backgroundColor: status.color }}
-              aria-hidden
-            />
-            <span className="topbar-status-label">{status.label}</span>
-          </div>
-        ) : null}
+        {showClock ? <HeaderClock /> : null}
         {trailing}
       </div>
     </header>

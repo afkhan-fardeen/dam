@@ -3,6 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { AllFilesClient } from "@/components/AllFilesClient";
 import { HomeGlass } from "@/components/HomeGlass";
+import { TrashClient } from "@/components/TrashClient";
 import type { Space, SpaceMembership } from "@/lib/types";
 
 type HomeClientProps = {
@@ -22,7 +23,11 @@ export function HomeClient({
   const view = searchParams.get("view") || "all";
 
   if (view === "all") {
-    return <HomeGlass profileName={profileName} />;
+    return <HomeGlass profileName={profileName} spaces={spaces} />;
+  }
+
+  if (view === "trash") {
+    return <TrashClient spaces={spaces} />;
   }
 
   return (

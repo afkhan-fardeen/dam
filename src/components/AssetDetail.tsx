@@ -28,6 +28,7 @@ import type { Asset, Entity, Folder, Tag } from "@/lib/types";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { queueAssetDownload } from "@/lib/download";
+import { queueAssetRestore, queueAssetTrash } from "@/lib/trashJobs";
 import { EntityChip } from "@/components/EntityChip";
 import { EntityPicker, type PickedEntity } from "@/components/EntityPicker";
 import { AttributeEditor } from "@/components/AttributeEditor";
@@ -85,7 +86,12 @@ export function AssetDetail({
   onUpdated,
   onFavoriteChange,
 }: AssetDetailProps) {
-  const { upsertJob, removeJob } = useDriveChrome();
+  const {
+    upsertJob,
+    removeJob,
+    setTransferPanelOpen,
+    notifyLibraryChange,
+  } = useDriveChrome();
   const [mounted, setMounted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -364,45 +370,26 @@ export function AssetDetail({
 
   async function confirmHandleDelete() {
     const permanent = trashMode;
-    setBusy(true);
-    setError(null);
-    try {
-      const url = permanent
-        ? `/api/assets/${asset.id}?permanent=1`
-        : `/api/assets/${asset.id}`;
-      const res = await fetch(url, { method: "DELETE" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Could not remove this file.");
-      setConfirmDelete(false);
-      onDeleted();
-      onClose();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not remove this file.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    setConfirmDelete(false);
+    onClose();
+
+    await queueAssetTrash([asset], {
+      upsertJob,
+      setTransferPanelOpen,
+      notifyLibraryChange,
+      permanent,
+    });
+    onDeleted();
   }
 
   async function handleRestore() {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/assets/${asset.id}/restore`, {
-        method: "POST",
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Could not restore this file.");
-      onRestored?.();
-      onClose();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not restore this file.",
-      );
-    } finally {
-      setBusy(false);
-    }
+    onClose();
+    await queueAssetRestore([asset], {
+      upsertJob,
+      setTransferPanelOpen,
+      notifyLibraryChange,
+    });
+    onRestored?.();
   }
 
   async function handleMove() {

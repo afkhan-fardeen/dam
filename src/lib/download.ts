@@ -10,7 +10,7 @@ type TransferJobPatch = {
   id: string;
   name: string;
   progress: number;
-  kind: "upload" | "download";
+  kind: "upload" | "download" | "trash" | "delete" | "restore";
   status: "uploading" | "downloading" | "saving" | "done" | "error";
   error?: string;
 };

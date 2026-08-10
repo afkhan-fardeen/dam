@@ -11,6 +11,7 @@ import {
   IconStar,
   IconStarFilled,
 } from "@tabler/icons-react";
+import { Menu } from "@/components/ui/Menu";
 import { getTagChipStyles } from "@/lib/categories";
 import type { Asset } from "@/lib/types";
 
@@ -76,41 +77,43 @@ function FileActionsMenu({
   onMenuAction: (action: AssetMenuAction) => void;
 }) {
   return (
-    <details className="dropdown dropdown-bottom dropdown-end">
-      <summary
-        className="btn btn-ghost btn-xs btn-square bg-base-100/90 list-none"
-        aria-label="File actions"
-        onClick={(e) => e.stopPropagation()}
+    <span
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <Menu
+        align="right"
+        widthClass="w-[180px]"
+        trigger={
+          <span className="asset-card-icon-btn" aria-label="File actions">
+            <IconDots size={14} stroke={1.75} />
+          </span>
+        }
       >
-        <IconDots size={14} />
-      </summary>
-      <ul className="dropdown-content menu bg-base-100 z-[9999] w-44 p-2 shadow-lg border border-base-300 type-body">
-        {(
-          [
-            { action: "rename" as const, label: "Rename" },
-            { action: "move" as const, label: "Move to folder" },
-            { action: "trash" as const, label: "Move to trash" },
-          ] as { action: AssetMenuAction; label: string }[]
-        ).map(({ action, label }) => (
-          <li key={action}>
-            <button
-              type="button"
-              className={action === "trash" ? "text-error" : ""}
-              onClick={(e) => {
-                e.stopPropagation();
-                const root = (e.currentTarget as HTMLElement).closest(
-                  "details",
-                ) as HTMLDetailsElement | null;
-                if (root) root.open = false;
-                onMenuAction(action);
-              }}
-            >
-              {label}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </details>
+        <button
+          type="button"
+          className="menu-row"
+          onClick={() => onMenuAction("rename")}
+        >
+          Rename
+        </button>
+        <button
+          type="button"
+          className="menu-row"
+          onClick={() => onMenuAction("move")}
+        >
+          Move to folder
+        </button>
+        <div className="card-divider" />
+        <button
+          type="button"
+          className="menu-row menu-row-danger"
+          onClick={() => onMenuAction("trash")}
+        >
+          Move to trash
+        </button>
+      </Menu>
+    </span>
   );
 }
 
@@ -139,14 +142,14 @@ function ActionButtons({
     <div
       className={`flex items-center gap-0.5 shrink-0 ${
         absolute
-          ? "absolute top-1 right-1 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:has-[details[open]]:opacity-100"
+          ? "absolute top-1 right-1 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
           : ""
       }`}
     >
       {onToggleFavorite ? (
         <button
           type="button"
-          className="btn btn-ghost btn-xs btn-circle bg-base-100/90"
+          className="asset-card-icon-btn"
           aria-label={asset.favorited ? "Unstar" : "Star"}
           onClick={(e) => {
             e.stopPropagation();
@@ -154,23 +157,23 @@ function ActionButtons({
           }}
         >
           {asset.favorited ? (
-            <IconStarFilled size={14} className="text-warning" />
+            <IconStarFilled size={14} className="text-[var(--warn)]" />
           ) : (
-            <IconStar size={14} />
+            <IconStar size={14} stroke={1.75} />
           )}
         </button>
       ) : null}
       {canDownload && onDownload ? (
         <button
           type="button"
-          className="btn btn-ghost btn-xs btn-circle bg-base-100/90"
+          className="asset-card-icon-btn"
           aria-label="Download"
           onClick={(e) => {
             e.stopPropagation();
             onDownload();
           }}
         >
-          <IconDownload size={14} />
+          <IconDownload size={14} stroke={1.75} />
         </button>
       ) : null}
       {canEdit && onMenuAction ? (
@@ -220,8 +223,8 @@ export function AssetCard({
   if (layout === "list") {
     return (
       <div
-        className={`group flex items-center gap-3 px-3 py-2 rounded-box hover:bg-base-200 ${
-          selected ? "bg-base-200" : ""
+        className={`asset-card-shell group flex items-center gap-3 px-3 py-2 ${
+          selected ? "is-selected" : ""
         }`}
       >
         {selectionMode ? (
@@ -229,7 +232,7 @@ export function AssetCard({
             type="checkbox"
             checked={selected}
             onChange={() => onToggleSelect?.()}
-            className="checkbox checkbox-sm checkbox-primary shrink-0"
+            className="asset-select-check shrink-0"
             onClick={(e) => e.stopPropagation()}
           />
         ) : null}
@@ -245,7 +248,7 @@ export function AssetCard({
           }}
           onDoubleClick={onDoubleClick}
         >
-          <span className="shrink-0 w-8 h-8 bg-base-200 border border-base-300 flex items-center justify-center overflow-hidden">
+          <span className="shrink-0 w-8 h-8 bg-[var(--surface-2)] border border-[var(--line)] rounded-[var(--radius)] flex items-center justify-center overflow-hidden">
             {thumbnailUrl && !locked ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -310,12 +313,12 @@ export function AssetCard({
   return (
     <div className="relative flex flex-col text-left group w-full">
       {selectionMode ? (
-        <label className="absolute top-1 left-1 z-10">
+        <label className="absolute top-2 left-2 z-10">
           <input
             type="checkbox"
             checked={selected}
             onChange={() => onToggleSelect?.()}
-            className="checkbox checkbox-sm checkbox-primary"
+            className="asset-select-check"
             onClick={(e) => e.stopPropagation()}
           />
         </label>
@@ -331,11 +334,11 @@ export function AssetCard({
           onClick();
         }}
         onDoubleClick={onDoubleClick}
-        className={`flex flex-col items-stretch text-left focus:outline-none rounded-box p-2 transition-colors w-full ${
-          selected ? "bg-base-200" : "hover:bg-base-200"
+        className={`asset-card-shell flex flex-col items-stretch text-left focus:outline-none p-2 w-full ${
+          selected ? "is-selected" : ""
         }`}
       >
-        <div className="w-full aspect-[4/3] flex items-center justify-center bg-base-200 rounded-box overflow-hidden relative border border-base-300">
+        <div className="w-full aspect-[4/3] flex items-center justify-center bg-[var(--surface-2)] rounded-[var(--radius)] overflow-hidden relative border border-[var(--line)]">
           {thumbnailUrl && !locked ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -417,75 +420,82 @@ export function FolderTile({
   onMenuAction,
 }: FolderTileProps) {
   return (
-    <div className="group relative flex items-center gap-2 w-full h-10 px-2 hover:bg-base-200 transition-colors">
+    <div className="place-folder-tile group">
       <button
         type="button"
         onDoubleClick={onOpen}
         onClick={onOpen}
-        className="flex items-center gap-2 flex-1 min-w-0 text-left h-full"
+        className="place-folder-tile-main"
         aria-label={`Open folder ${name}`}
       >
         <span
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-white"
+          className="place-folder-tile-icon"
           style={{ backgroundColor: color }}
+          aria-hidden
         >
           <IconFolderFilled size={18} />
         </span>
-        <span className="type-label truncate flex-1 min-w-0" title={name}>
+        <span className="place-folder-tile-name truncate" title={name}>
           {name}
         </span>
         {locked ? (
-          <IconLock size={14} className="opacity-50 shrink-0" />
+          <IconLock size={14} className="place-folder-tile-lock" aria-hidden />
         ) : null}
       </button>
       {canEdit && onMenuAction ? (
-        <details className="dropdown dropdown-bottom dropdown-end shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 open:!opacity-100 z-50">
-          <summary
-            className="btn btn-ghost btn-xs btn-square list-none"
-            aria-label="Folder actions"
-            onClick={(e) => e.stopPropagation()}
+        <span
+          className="place-folder-tile-menu"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Menu
+            align="right"
+            widthClass="w-[190px]"
+            trigger={
+              <span className="asset-card-icon-btn" aria-label="Folder actions">
+                <IconDots size={14} stroke={1.75} />
+              </span>
+            }
           >
-            <IconDots size={14} />
-          </summary>
-          <ul className="dropdown-content menu bg-base-100 z-[9999] w-48 p-2 shadow-lg border border-base-300 type-body">
-            {(
-              [
-                { action: "rename" as const, label: "Rename" },
-                { action: "move" as const, label: "Move to…" },
-                {
-                  action: "set_passcode" as const,
-                  label: locked ? "Change passcode" : "Set passcode",
-                },
-                ...(locked
-                  ? [
-                      {
-                        action: "clear_passcode" as const,
-                        label: "Turn passcode off",
-                      },
-                    ]
-                  : []),
-                { action: "delete" as const, label: "Delete" },
-              ] as { action: FolderMenuAction; label: string }[]
-            ).map(({ action, label }) => (
-              <li key={action}>
-                <button
-                  type="button"
-                  className={action === "delete" ? "text-error" : ""}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const root = (e.currentTarget as HTMLElement).closest(
-                      "details",
-                    ) as HTMLDetailsElement | null;
-                    if (root) root.open = false;
-                    onMenuAction(action);
-                  }}
-                >
-                  {label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
+            <button
+              type="button"
+              className="menu-row"
+              onClick={() => onMenuAction("rename")}
+            >
+              Rename
+            </button>
+            <button
+              type="button"
+              className="menu-row"
+              onClick={() => onMenuAction("move")}
+            >
+              Move to…
+            </button>
+            <button
+              type="button"
+              className="menu-row"
+              onClick={() => onMenuAction("set_passcode")}
+            >
+              {locked ? "Change passcode" : "Set passcode"}
+            </button>
+            {locked ? (
+              <button
+                type="button"
+                className="menu-row"
+                onClick={() => onMenuAction("clear_passcode")}
+              >
+                Turn passcode off
+              </button>
+            ) : null}
+            <div className="card-divider" />
+            <button
+              type="button"
+              className="menu-row menu-row-danger"
+              onClick={() => onMenuAction("delete")}
+            >
+              Delete folder
+            </button>
+          </Menu>
+        </span>
       ) : null}
     </div>
   );

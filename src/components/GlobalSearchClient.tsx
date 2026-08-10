@@ -1,8 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "next/navigation";
-import { IconFilter, IconFolder } from "@tabler/icons-react";
+import { IconFilter, IconFolder, IconPhoto, IconFile } from "@tabler/icons-react";
 import { AssetCard } from "@/components/AssetCard";
 import { Menu } from "@/components/ui/Menu";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -107,18 +113,19 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
   function AssetSection({
     title,
     items,
+    icon,
   }: {
     title: string;
     items: Asset[];
+    icon: ReactNode;
   }) {
     if (items.length === 0) return null;
     return (
-      <section className="surface p-4 flex flex-col gap-3">
-        <h2 className="type-label px-1">
-          {title}{" "}
-          <span className="text-[var(--ink-faint)] font-normal normal-case tracking-normal">
-            ({items.length})
-          </span>
+      <section className="search-page-section">
+        <h2 className="search-page-section-title">
+          <span className="search-page-section-icon">{icon}</span>
+          {title}
+          <span className="search-page-count">{items.length}</span>
         </h2>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] gap-2">
           {items.map((asset) => {
@@ -140,7 +147,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
                   }
                   onClick={() => openAsset(asset)}
                 />
-                <span className="match-chip absolute top-2 left-2 z-10 bg-[var(--surface)]">
+                <span className="search-hit-chip search-hit-chip--overlay">
                   {assetMatchReason(q, asset)}
                 </span>
               </div>
@@ -152,8 +159,8 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
   }
 
   return (
-    <div className="flex flex-col gap-5 w-full max-w-4xl mx-auto pb-8">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+    <div className="search-page">
+      <div className="search-page-head">
         <div>
           <h1 className="type-page">Search</h1>
           <p className="type-caption mt-1">
@@ -161,7 +168,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
               ? loading
                 ? `Searching for “${q.trim()}”…`
                 : `${filteredFolders.length} folders · ${images.length} images · ${files.length} files`
-              : "Type above to search everything."}
+              : "Type in the bar above to search everything."}
           </p>
         </div>
         <Menu
@@ -176,13 +183,13 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
           }
           widthClass="w-[220px]"
         >
-          <p className="type-label px-2.5 pt-1 pb-1">Place</p>
+          <p className="type-label px-2.5 pt-1 pb-1">Space</p>
           <button
             type="button"
             className="menu-row"
             onClick={() => setSpaceFilter("")}
           >
-            All places
+            All spaces
           </button>
           {spaces.map((s) => (
             <button
@@ -223,20 +230,28 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
       ) : null}
 
       {!loading ? (
-        <div className="search-results-stagger flex flex-col gap-5">
+        <div className="search-page-body">
           {filteredFolders.length > 0 ? (
-            <section className="surface overflow-hidden">
-              <h2 className="type-label px-4 pt-4 pb-2">Folders</h2>
-              <div className="flex flex-col">
+            <section className="search-page-section">
+              <h2 className="search-page-section-title">
+                <span className="search-page-section-icon">
+                  <IconFolder size={15} stroke={1.75} />
+                </span>
+                Folders
+                <span className="search-page-count">
+                  {filteredFolders.length}
+                </span>
+              </h2>
+              <div className="search-folder-list">
                 {filteredFolders.map((f) => (
                   <button
                     key={f.id}
                     type="button"
-                    className="card-row"
+                    className="search-folder-row"
                     onClick={() => openFolder(f)}
                   >
                     <IconFolder
-                      size={15}
+                      size={16}
                       stroke={1.75}
                       className="text-[var(--ink-faint)] shrink-0"
                     />
@@ -249,21 +264,29 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
                           "#8e8e93",
                       }}
                     />
-                    <span className="flex-1 truncate text-left type-body">
+                    <span className="flex-1 truncate text-left type-body font-medium">
                       {f.name}
                     </span>
                     <span className="type-caption truncate max-w-[8rem]">
                       {f.space_name || spaceById.get(f.space_id)?.name || ""}
                     </span>
-                    <span className="match-chip">Folder name</span>
+                    <span className="search-hit-chip">Folder</span>
                   </button>
                 ))}
               </div>
             </section>
           ) : null}
 
-          <AssetSection title="Images" items={images} />
-          <AssetSection title="Files" items={files} />
+          <AssetSection
+            title="Images"
+            items={images}
+            icon={<IconPhoto size={15} stroke={1.75} />}
+          />
+          <AssetSection
+            title="Files"
+            items={files}
+            icon={<IconFile size={15} stroke={1.75} />}
+          />
         </div>
       ) : null}
     </div>

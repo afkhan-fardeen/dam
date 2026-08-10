@@ -96,7 +96,7 @@ export function MoveAssetModal({
             className="flat-input"
             autoFocus
           >
-            <option value="">Place root</option>
+            <option value="">Space root</option>
             {folders.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.passcode_enabled ? `${f.name} (locked)` : f.name}

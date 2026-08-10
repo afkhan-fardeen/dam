@@ -18,12 +18,14 @@ import { FolderMetaPanel } from "@/components/FolderMetaPanel";
 import { MoveAssetModal } from "@/components/MoveAssetModal";
 import { PasswordField } from "@/components/PasswordField";
 import { Button } from "@/components/ui/Button";
+import { Menu } from "@/components/ui/Menu";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { SelectionInspector } from "@/components/SelectionInspector";
+import { TrashClient } from "@/components/TrashClient";
 import { VirtualPhotoGrid } from "@/components/VirtualPhotoGrid";
 import { uploadFileWithProgress } from "@/lib/upload";
 import { queueAssetDownload } from "@/lib/download";
+import { queueAssetTrash } from "@/lib/trashJobs";
 import { writeLastPlace } from "@/lib/lastPlace";
 import { readViewMode, writeViewMode, type ViewMode } from "@/lib/uiPrefs";
 import {
@@ -77,6 +79,8 @@ export function SpaceWorkspace({
     removeJob,
     setPlaceNav,
     libraryEpoch,
+    setTransferPanelOpen,
+    notifyLibraryChange,
   } = useDriveChrome();
 
   const editable = canEdit(role, isAdmin);
@@ -90,8 +94,11 @@ export function SpaceWorkspace({
   const [folders, setFolders] = useState<Folder[]>([]);
   const [folderId, setFolderId] = useState<string | null>(folderFromUrl);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [assetTotal, setAssetTotal] = useState(0);
+  const [assetPage, setAssetPage] = useState(1);
+  const [hasMoreAssets, setHasMoreAssets] = useState(false);
+  const [loadingMoreAssets, setLoadingMoreAssets] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Asset | null>(null);
   const [detailLaunch, setDetailLaunch] = useState<{
@@ -134,14 +141,16 @@ export function SpaceWorkspace({
     setViewMode(readViewMode());
   }, []);
 
+  // Sync URL → state only when the param actually changes (back/forward).
   useEffect(() => {
-    setFolderId(folderFromUrl);
+    const next = folderFromUrl ?? null;
+    setFolderId((prev) => (prev === next ? prev : next));
   }, [folderFromUrl]);
 
   const folderRequestSeen = useRef(folderRequestId);
   useEffect(() => {
     // Only open when the shell bumps the counter — not when this page mounts
-    // with a leftover id (was opening New folder on every Place click).
+    // with a leftover id (was opening New folder on every Space click).
     if (folderRequestId === folderRequestSeen.current) return;
     folderRequestSeen.current = folderRequestId;
     if (folderRequestId > 0 && editable) setShowNewFolder(true);
@@ -158,88 +167,106 @@ export function SpaceWorkspace({
     if (res.ok) setFolders(json.folders as Folder[]);
   }, [space.id]);
 
-  const loadAssets = useCallback(async (opts?: { quiet?: boolean }) => {
-    const cacheKey = folderListCacheKey(space.id, {
-      folderId,
-      view,
-      query,
-    });
-    const quiet = Boolean(opts?.quiet || hasLoadedOnce.current);
-    const cached = getCachedFolderAssets(cacheKey);
+  const loadAssets = useCallback(
+    async (opts?: { quiet?: boolean; page?: number; append?: boolean }) => {
+      const page = opts?.page ?? 1;
+      const append = Boolean(opts?.append);
+      const cacheKey = folderListCacheKey(space.id, {
+        folderId,
+        view,
+        query,
+      });
+      const quiet = Boolean(opts?.quiet || hasLoadedOnce.current);
+      const cached = !append ? getCachedFolderAssets(cacheKey) : null;
 
-    if (cached) {
-      setAssets(cached);
-      setLoading(false);
-      if (quiet) setRefreshing(true);
-    } else if (!quiet) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
-
-    setError(null);
-    const gen = ++loadGen.current;
-
-    try {
-      const params = new URLSearchParams({ space_id: space.id });
-      if (query.trim()) {
-        params.set("q", query.trim());
-      } else if (view === "trash") {
-        params.set("view", "trash");
-      } else if (view === "recent") {
-        params.set("view", "recent");
-      } else if (view === "starred") {
-        params.set("view", "starred");
-      } else if (folderId) {
-        params.set("folder_id", folderId);
-      }
-      const res = await fetch(`/api/search?${params.toString()}`);
-      const json = await res.json();
-      if (gen !== loadGen.current) return;
-
-      if (!res.ok) {
-        if (json.code === "SPACE_LOCKED") {
-          setSpaceLocked(true);
-          setPasscodeInput("");
-          setModalError(null);
-          setModal("space_unlock");
-          setAssets([]);
-          return;
-        }
-        if (json.code === "FOLDER_LOCKED" && folderId) {
-          setTargetFolder({
-            id: (json.folder_id as string) || folderId,
-            space_id: space.id,
-            parent_folder_id: null,
-            name: "Locked folder",
-            passcode_enabled: true,
-            created_by: null,
-            created_at: null,
-          });
-          setPasscodeInput("");
-          setModalError(null);
-          setModal("unlock");
-          setAssets([]);
-          return;
-        }
-        throw new Error(json.error || "Could not load files.");
-      }
-      setSpaceLocked(false);
-      const next = (json.assets as Asset[]) ?? [];
-      setCachedFolderAssets(cacheKey, next);
-      setAssets(next);
-      hasLoadedOnce.current = true;
-    } catch (err) {
-      if (gen !== loadGen.current) return;
-      setError(err instanceof Error ? err.message : "Could not load files.");
-      if (!cached) setAssets([]);
-    } finally {
-      if (gen === loadGen.current) {
+      // SWR: paint cache immediately. Never blank the grid on folder switches.
+      if (cached && page === 1 && !append) {
+        setAssets(cached);
         setLoading(false);
-        setRefreshing(false);
+      } else if (append) {
+        setLoadingMoreAssets(true);
+      } else if (!quiet) {
+        setLoading(true);
       }
-    }
-  }, [space.id, folderId, query, view]);
+
+      setError(null);
+      const gen = ++loadGen.current;
+
+      try {
+        const params = new URLSearchParams({ space_id: space.id });
+        params.set("page", String(page));
+        params.set("limit", "24");
+        if (query.trim()) {
+          params.set("q", query.trim());
+        } else if (view === "trash") {
+          params.set("view", "trash");
+        } else if (view === "recent") {
+          params.set("view", "recent");
+        } else if (view === "starred") {
+          params.set("view", "starred");
+        } else if (folderId) {
+          params.set("folder_id", folderId);
+        }
+        const res = await fetch(`/api/search?${params.toString()}`);
+        const json = await res.json();
+        if (gen !== loadGen.current) return;
+
+        if (!res.ok) {
+          if (json.code === "SPACE_LOCKED") {
+            setSpaceLocked(true);
+            setPasscodeInput("");
+            setModalError(null);
+            setModal("space_unlock");
+            setAssets([]);
+            setAssetTotal(0);
+            setHasMoreAssets(false);
+            return;
+          }
+          if (json.code === "FOLDER_LOCKED" && folderId) {
+            setTargetFolder({
+              id: (json.folder_id as string) || folderId,
+              space_id: space.id,
+              parent_folder_id: null,
+              name: "Locked folder",
+              passcode_enabled: true,
+              created_by: null,
+              created_at: null,
+            });
+            setPasscodeInput("");
+            setModalError(null);
+            setModal("unlock");
+            setAssets([]);
+            setAssetTotal(0);
+            setHasMoreAssets(false);
+            return;
+          }
+          throw new Error(json.error || "Could not load files.");
+        }
+        setSpaceLocked(false);
+        const next = (json.assets as Asset[]) ?? [];
+        const total =
+          typeof json.total === "number" ? json.total : next.length;
+        setAssetTotal(total);
+        setAssetPage(page);
+        setHasMoreAssets(Boolean(json.hasMore));
+        if (page === 1 && !append) {
+          setCachedFolderAssets(cacheKey, next);
+        }
+        setAssets((prev) => (append ? [...prev, ...next] : next));
+        hasLoadedOnce.current = true;
+      } catch (err) {
+        if (gen !== loadGen.current) return;
+        setError(err instanceof Error ? err.message : "Could not load files.");
+        if (!cached && !hasLoadedOnce.current) setAssets([]);
+      } finally {
+        if (gen === loadGen.current) {
+          setLoading(false);
+          setLoadingMoreAssets(false);
+        }
+      }
+    },
+    [space.id, folderId, query, view],
+  );
 
   useEffect(() => {
     void loadFolders();
@@ -280,20 +307,25 @@ export function SpaceWorkspace({
 
   const navigateFolder = useCallback(
     (id: string | null) => {
-      const params = new URLSearchParams();
-      if (id) params.set("folder", id);
-      const qs = params.toString();
-      // Paint from cache immediately, then sync URL + folderId for the quiet fetch.
+      if (id === folderId) return;
+
       const cacheKey = folderListCacheKey(space.id, {
         folderId: id,
         view: "all",
       });
       const cached = getCachedFolderAssets(cacheKey);
       if (cached) setAssets(cached);
+
       setFolderId(id);
       setSelectedIds(new Set());
       setSelectionMode(false);
-      router.push(`/s/${space.slug}${qs ? `?${qs}` : ""}`);
+
+      // Soft URL update (no scroll jump). Equality guard above avoids echo fetch.
+      const url = id
+        ? `/s/${space.slug}?folder=${encodeURIComponent(id)}`
+        : `/s/${space.slug}`;
+      router.replace(url, { scroll: false });
+
       const folderName = id
         ? folders.find((f) => f.id === id)?.name ?? null
         : null;
@@ -304,7 +336,7 @@ export function SpaceWorkspace({
         folderName,
       });
     },
-    [router, space.id, space.slug, space.name, folders],
+    [folderId, router, space.id, space.slug, space.name, folders],
   );
 
   const prefetchFolder = useCallback(
@@ -361,6 +393,22 @@ export function SpaceWorkspace({
       return next;
     });
   }
+
+  function selectAllAssets() {
+    setSelectedIds(new Set(assets.map((a) => a.id)));
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }
+
+  const allSelected =
+    assets.length > 0 && selectedIds.size === assets.length;
 
   async function handleAssetMenu(asset: Asset, action: AssetMenuAction) {
     if (action === "trash") {
@@ -465,21 +513,24 @@ export function SpaceWorkspace({
 
   async function confirmTrashAsset() {
     if (!pendingTrashAsset) return;
-    setModalBusy(true);
     const asset = pendingTrashAsset;
-    try {
-      const res = await fetch(`/api/assets/${asset.id}`, { method: "DELETE" });
-      if (res.ok) {
-        setAssets((list) => list.filter((a) => a.id !== asset.id));
-        if (selected?.id === asset.id) {
-          setSelected(null);
-          setDetailLaunch({ panel: false, move: false });
-        }
-      }
-      setModal(null);
-      setPendingTrashAsset(null);
-    } finally {
-      setModalBusy(false);
+    setModal(null);
+    setPendingTrashAsset(null);
+    if (selected?.id === asset.id) {
+      setSelected(null);
+      setDetailLaunch({ panel: false, move: false });
+    }
+    setAssets((list) => list.filter((a) => a.id !== asset.id));
+    setAssetTotal((n) => Math.max(0, n - 1));
+
+    const removed = await queueAssetTrash([asset], {
+      upsertJob,
+      setTransferPanelOpen,
+      notifyLibraryChange,
+    });
+    if (removed.length === 0) {
+      setError("Could not move file to trash.");
+      void loadAssets();
     }
   }
 
@@ -490,24 +541,28 @@ export function SpaceWorkspace({
 
   async function confirmBulkTrash() {
     if (selectedIds.size === 0) return;
-    setBulkBusy(true);
+    const picked = assets.filter((a) => selectedIds.has(a.id));
+    if (picked.length === 0) return;
+
+    setModal(null);
+    setBulkBusy(false);
     setError(null);
-    try {
-      for (const id of selectedIds) {
-        const res = await fetch(`/api/assets/${id}`, { method: "DELETE" });
-        if (!res.ok) {
-          const json = await res.json();
-          throw new Error(json.error || "Could not trash some files");
-        }
-      }
-      setSelectedIds(new Set());
-      setSelectionMode(false);
-      setModal(null);
-      await loadAssets();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Bulk trash failed");
-    } finally {
-      setBulkBusy(false);
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+    const pickedIds = new Set(picked.map((a) => a.id));
+    setAssets((list) => list.filter((a) => !pickedIds.has(a.id)));
+    setAssetTotal((n) => Math.max(0, n - picked.length));
+
+    const removed = await queueAssetTrash(picked, {
+      upsertJob,
+      setTransferPanelOpen,
+      notifyLibraryChange,
+    });
+    if (removed.length < picked.length) {
+      setError(
+        `Moved ${removed.length} of ${picked.length} to trash — some failed.`,
+      );
+      void loadAssets();
     }
   }
 
@@ -957,15 +1012,20 @@ export function SpaceWorkspace({
     if (uploaded.length > 0) setBulkReview(uploaded);
   }
 
-  const inspectorAssets = useMemo(
-    () => assets.filter((a) => selectedIds.has(a.id)),
-    [assets, selectedIds],
-  );
+  if (view === "trash") {
+    return (
+      <TrashClient
+        spaces={[space]}
+        spaceId={space.id}
+        spaceName={space.name}
+      />
+    );
+  }
 
   return (
     <div
-      className={`flex gap-0 w-full min-h-[60vh] relative ${
-        dragging ? "outline outline-2 outline-dashed outline-[var(--accent)]" : ""
+      className={`place-workspace relative ${
+        dragging ? "is-dragging" : ""
       }`}
       onDragEnter={(e) => {
         if (!editable || !serverOnline) return;
@@ -988,147 +1048,164 @@ export function SpaceWorkspace({
         }
       }}
     >
-      <div className="flex-1 min-w-0 flex flex-col gap-4 p-4 sm:p-5 relative">
       {dragging ? (
         <div
-          className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center bg-base-100/70 type-label"
+          className="pointer-events-none absolute inset-3 z-10 flex items-center justify-center place-drop-overlay type-label"
           style={{ color: space.color }}
         >
           Drop files to upload
         </div>
       ) : null}
 
-      <div className="place-toolbar">
-        <div className="place-toolbar-left min-w-0">
-          {title ? (
-            <h1 className="place-toolbar-title">{title}</h1>
-          ) : (
+      <header className="place-header">
+        <div className="place-header-main min-w-0">
+          {/* Path crumbs — exclude current folder (shown as title below) */}
+          {!title && currentFolder && breadcrumb.length > 1 ? (
             <nav className="place-crumbs" aria-label="Breadcrumb">
-              {breadcrumb.map((crumb, i) => {
-                const isLast = i === breadcrumb.length - 1;
-                const hideMiddle =
-                  breadcrumb.length > 4 && i > 0 && i < breadcrumb.length - 2;
-                if (hideMiddle && i === 1) {
-                  return (
-                    <span key="ellipsis" className="place-crumb-sep-wrap">
-                      <IconChevronRight
-                        size={14}
-                        className="place-crumb-sep"
-                        aria-hidden
-                      />
-                      <span className="place-crumb place-crumb--muted">…</span>
-                    </span>
-                  );
-                }
-                if (hideMiddle) return null;
-                return (
-                  <span key={`${crumb.id ?? "root"}-${i}`} className="place-crumb-sep-wrap">
-                    {i > 0 ? (
-                      <IconChevronRight
-                        size={14}
-                        className="place-crumb-sep"
-                        aria-hidden
-                      />
-                    ) : null}
-                    {isLast ? (
-                      <span
-                        className="place-crumb place-crumb--current"
-                        title={crumb.name}
-                      >
-                        {crumb.name}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="place-crumb"
-                        style={i === 0 ? { color: space.color } : undefined}
-                        onClick={() => navigateFolder(crumb.id)}
-                        title={crumb.name}
-                      >
-                        {crumb.name}
-                      </button>
-                    )}
-                  </span>
-                );
-              })}
-              {currentFolder ? (
-                <button
-                  type="button"
-                  className="place-crumb-info"
-                  title="Folder details"
-                  onClick={() => setMetaFolder(currentFolder)}
+              <button
+                type="button"
+                className="place-crumb"
+                style={{ color: space.color }}
+                onClick={() => navigateFolder(null)}
+              >
+                {space.name}
+              </button>
+              {breadcrumb.slice(1, -1).map((crumb, i) => (
+                <span
+                  key={`${crumb.id ?? "root"}-${i + 1}`}
+                  className="place-crumb-sep-wrap"
                 >
-                  <IconInfoCircle size={15} stroke={1.75} />
-                </button>
-              ) : null}
-            </nav>
-          )}
-          {!serverOnline ? (
-            <p className="place-toolbar-note">Server offline</p>
-          ) : null}
-        </div>
-        <div className="place-toolbar-right">
-          {editable && currentFolder && view === "all" && !query.trim() ? (
-            <div className="dropdown dropdown-end">
-              <div
-                tabIndex={0}
-                role="button"
-                className="place-toolbar-ghost"
-              >
-                <IconDots size={16} />
-                <span>Folder</span>
-              </div>
-              <ul
-                tabIndex={0}
-                className="dropdown-content menu bg-base-100 z-[9999] w-52 p-2 shadow-lg border border-base-300"
-              >
-                <li>
+                  <IconChevronRight
+                    size={14}
+                    className="place-crumb-sep"
+                    aria-hidden
+                  />
                   <button
                     type="button"
+                    className="place-crumb"
+                    onClick={() => navigateFolder(crumb.id)}
+                    title={crumb.name}
+                  >
+                    {crumb.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+          ) : null}
+
+          {!title ? (
+            <div className="place-header-title-row">
+              {!currentFolder ? (
+                <span
+                  className="place-header-dot"
+                  style={{ backgroundColor: space.color }}
+                  aria-hidden
+                />
+              ) : null}
+              <h1 className="place-header-name">
+                {currentFolder ? currentFolder.name : space.name}
+              </h1>
+              {/* Current-folder actions sit on the title (Drive / Finder pattern) */}
+              {editable &&
+              currentFolder &&
+              view === "all" &&
+              !query.trim() ? (
+                <Menu
+                  align="left"
+                  widthClass="w-[200px]"
+                  trigger={
+                    <span
+                      className="place-title-more"
+                      aria-label="Folder actions"
+                      title="Folder actions"
+                    >
+                      <IconDots size={16} stroke={1.75} />
+                    </span>
+                  }
+                >
+                  <button
+                    type="button"
+                    className="menu-row"
                     onClick={() => openMenu(currentFolder, "rename")}
                   >
                     Rename
                   </button>
-                </li>
-                <li>
                   <button
                     type="button"
+                    className="menu-row"
                     onClick={() => openMenu(currentFolder, "move")}
                   >
                     Move to…
                   </button>
-                </li>
-                <li>
                   <button
                     type="button"
+                    className="menu-row"
                     onClick={() => openMenu(currentFolder, "set_passcode")}
                   >
                     {currentFolder.passcode_enabled
                       ? "Change passcode"
                       : "Set passcode"}
                   </button>
-                </li>
-                {currentFolder.passcode_enabled ? (
-                  <li>
+                  {currentFolder.passcode_enabled ? (
                     <button
                       type="button"
-                      onClick={() => openMenu(currentFolder, "clear_passcode")}
+                      className="menu-row"
+                      onClick={() =>
+                        openMenu(currentFolder, "clear_passcode")
+                      }
                     >
                       Turn passcode off
                     </button>
-                  </li>
-                ) : null}
-                <li>
+                  ) : null}
                   <button
                     type="button"
-                    className="text-error"
+                    className="menu-row"
+                    onClick={() => setMetaFolder(currentFolder)}
+                  >
+                    Details
+                  </button>
+                  <div className="card-divider" />
+                  <button
+                    type="button"
+                    className="menu-row menu-row-danger"
                     onClick={() => openMenu(currentFolder, "delete")}
                   >
                     Delete folder
                   </button>
-                </li>
-              </ul>
+                </Menu>
+              ) : null}
+              {currentFolder &&
+              !(editable && view === "all" && !query.trim()) ? (
+                <button
+                  type="button"
+                  className="place-title-more"
+                  title="Folder details"
+                  aria-label="Folder details"
+                  onClick={() => setMetaFolder(currentFolder)}
+                >
+                  <IconInfoCircle size={16} stroke={1.75} />
+                </button>
+              ) : null}
             </div>
+          ) : (
+            <h1 className="place-header-name">{title}</h1>
+          )}
+          {!serverOnline ? (
+            <p className="place-toolbar-note">Server offline</p>
+          ) : null}
+        </div>
+        <div className="place-header-actions">
+          {view !== "trash" && assets.length > 0 ? (
+            <button
+              type="button"
+              className={`place-toolbar-ghost${selectionMode ? " is-active" : ""}`}
+              onClick={() => {
+                if (selectionMode) exitSelectionMode();
+                else setSelectionMode(true);
+              }}
+            >
+              {selectionMode ? "Cancel" : "Select"}
+            </button>
           ) : null}
           {view !== "trash" ? (
             <ViewModeToggle
@@ -1140,7 +1217,7 @@ export function SpaceWorkspace({
             />
           ) : null}
         </div>
-      </div>
+      </header>
 
       {showNewFolder && editable ? (
         <Modal
@@ -1191,59 +1268,68 @@ export function SpaceWorkspace({
         <p className="type-caption text-error">{error}</p>
       ) : null}
 
-      {view !== "trash" && assets.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              setSelectionMode((v) => !v);
-              setSelectedIds(new Set());
-            }}
-          >
-            {selectionMode ? "Cancel select" : "Select"}
-          </button>
-          {selectionMode && selectedIds.size > 0 ? (
-            <div className="bulk-bar flex flex-wrap items-center gap-2 w-full">
-              <span className="type-caption">
-                {selectedIds.size} selected
-              </span>
-              {editable ? (
-                <>
-                  <button
-                    type="button"
-                    disabled={bulkBusy}
-                    className="btn-flat !h-8 px-3 text-[12px]"
-                    onClick={() => {
-                      setBulkFolderId(folderId);
-                      setModalError(null);
-                      setModal("bulk_move");
-                    }}
-                  >
-                    Move
-                  </button>
-                  <button
-                    type="button"
-                    disabled={bulkBusy}
-                    className="btn-flat-danger !h-8 px-3 text-[12px]"
-                    onClick={() => void bulkTrash()}
-                  >
-                    Trash
-                  </button>
-                </>
-              ) : null}
-              {downloadable ? (
+      {view !== "trash" && selectionMode ? (
+        <div className="bulk-bar" role="toolbar" aria-label="Selection">
+          <div className="bulk-bar-left">
+            <button
+              type="button"
+              className="place-toolbar-ghost"
+              onClick={() => {
+                if (allSelected) clearSelection();
+                else selectAllAssets();
+              }}
+            >
+              {allSelected ? "Deselect all" : "Select all"}
+            </button>
+            <span className="bulk-bar-count">
+              {selectedIds.size === 0
+                ? "None selected"
+                : `${selectedIds.size} selected`}
+            </span>
+          </div>
+          <div className="bulk-bar-right">
+            {selectedIds.size > 0 && editable ? (
+              <>
                 <button
                   type="button"
                   disabled={bulkBusy}
                   className="btn-flat !h-8 px-3 text-[12px]"
-                  onClick={() => void bulkZipDownload()}
+                  onClick={() => {
+                    setBulkFolderId(folderId);
+                    setModalError(null);
+                    setModal("bulk_move");
+                  }}
                 >
-                  {bulkBusy ? "Preparing…" : "Download zip"}
+                  Move
                 </button>
-              ) : null}
-            </div>
-          ) : null}
+                <button
+                  type="button"
+                  disabled={bulkBusy}
+                  className="btn-flat-danger !h-8 px-3 text-[12px]"
+                  onClick={() => void bulkTrash()}
+                >
+                  Trash
+                </button>
+              </>
+            ) : null}
+            {selectedIds.size > 0 && downloadable ? (
+              <button
+                type="button"
+                disabled={bulkBusy}
+                className="btn-flat !h-8 px-3 text-[12px]"
+                onClick={() => void bulkZipDownload()}
+              >
+                {bulkBusy ? "Preparing…" : "Download zip"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="place-toolbar-ghost"
+              onClick={exitSelectionMode}
+            >
+              Done
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -1407,27 +1493,20 @@ export function SpaceWorkspace({
         </p>
       ) : null}
 
-      <div
-        className={`flex flex-col gap-4 transition-opacity duration-150${
-          refreshing ? " opacity-80" : ""
-        }`}
-      >
-        {refreshing ? (
-          <div
-            className="h-0.5 w-full overflow-hidden rounded-full bg-[var(--line)]"
-            aria-hidden
-          >
-            <div className="folder-refresh-bar h-full w-1/3 rounded-full bg-[var(--accent)]" />
-          </div>
-        ) : null}
+      <div className="place-body">
         {childFolders.length > 0 ? (
-          <section>
-            <h2 className="type-micro opacity-50 mb-2">Folders</h2>
-            <div className="flex flex-col gap-0.5 sm:grid sm:grid-cols-2 sm:gap-0.5">
+          <section className="place-folders" aria-label="Folders">
+            <div className="place-section-head">
+              <h2 className="place-section-label">
+                Folders
+                <span className="place-section-count">{childFolders.length}</span>
+              </h2>
+            </div>
+            <div className="place-folder-strip">
               {childFolders.map((folder) => (
                 <div
                   key={folder.id}
-                  className="relative group/folder"
+                  className="place-folder-chip group/folder"
                   onMouseEnter={() => prefetchFolder(folder.id)}
                   onFocus={() => prefetchFolder(folder.id)}
                   onDragOver={(e) => {
@@ -1458,7 +1537,7 @@ export function SpaceWorkspace({
                   />
                   <button
                     type="button"
-                    className="absolute top-2 right-10 dock-btn !px-1.5 opacity-0 group-hover/folder:opacity-100 transition-opacity"
+                    className="place-folder-info"
                     title="Folder details"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1473,27 +1552,40 @@ export function SpaceWorkspace({
           </section>
         ) : null}
 
-        <section>
-          <h2 className="type-micro opacity-50 mb-2">
-            {view === "trash"
-              ? "Recently Deleted"
-              : photosMode
-                ? "Photos"
-                : "Files"}
-            {!loading ? ` · ${assets.length}` : ""}
-          </h2>
+        <section className="place-files">
+          <div className="place-section-head">
+            <h2 className="place-section-label">
+              {view === "trash"
+                ? "Recently Deleted"
+                : photosMode
+                  ? "Photos"
+                  : "Files"}
+              {!loading ? (
+                <span className="place-section-count">{assetTotal}</span>
+              ) : null}
+            </h2>
+            {view !== "trash" && assets.length > 0 && !selectionMode ? (
+              <button
+                type="button"
+                className="place-section-action"
+                onClick={() => setSelectionMode(true)}
+              >
+                Select
+              </button>
+            ) : null}
+          </div>
           {loading ? (
             <Skeleton rows={4} />
           ) : assets.length === 0 ? (
-            <div className="surface empty-state">
-              <p className="type-title">
-                {view === "trash" ? "Recently Deleted" : "Empty"}
+            <div className="place-empty">
+              <p className="place-empty-title">
+                {view === "trash" ? "Trash is empty" : "No files yet"}
               </p>
-              <p className="type-caption mt-2">
+              <p className="place-empty-copy">
                 {view === "trash"
-                  ? "Trash is empty."
+                  ? "Deleted files will show up here."
                   : editable
-                    ? "Drop files here or use Upload in the dock."
+                    ? "Drop files here or use Upload in the header."
                     : "Nothing here yet."}
               </p>
             </div>
@@ -1613,26 +1705,31 @@ export function SpaceWorkspace({
               ))}
             </div>
           )}
+          {!loading && assetTotal > 0 ? (
+            <div className="trash-pager">
+              <span className="trash-pager-meta">
+                Showing {assets.length} of {assetTotal}
+              </span>
+              {hasMoreAssets ? (
+                <button
+                  type="button"
+                  className="place-toolbar-ghost"
+                  disabled={loadingMoreAssets}
+                  onClick={() =>
+                    void loadAssets({
+                      page: assetPage + 1,
+                      append: true,
+                      quiet: true,
+                    })
+                  }
+                >
+                  {loadingMoreAssets ? "Loading…" : "Load more"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </section>
       </div>
-
-      </div>
-
-      {inspectorAssets.length > 0 && view !== "trash" && !selected ? (
-        <SelectionInspector
-          assets={inspectorAssets}
-          folder={null}
-          spaceName={space.name}
-          onClear={() => {
-            setSelectedIds(new Set());
-            setSelectionMode(false);
-          }}
-          onOpenAsset={(a) => {
-            setDetailLaunch({ panel: true, move: false });
-            setSelected(a);
-          }}
-        />
-      ) : null}
 
       {selected ? (
         <AssetDetail
@@ -1732,7 +1829,7 @@ export function SpaceWorkspace({
       {modal === "space_unlock" ? (
         <Modal
           title={`Unlock “${space.name}”`}
-          description="Enter the place passcode. Access lasts 8 hours."
+          description="Enter the space passcode. Access lasts 8 hours."
           onClose={() => setModal(null)}
           closeDisabled={modalBusy}
           onSubmit={submitSpaceUnlock}
@@ -1746,7 +1843,7 @@ export function SpaceWorkspace({
                 Cancel
               </Button>
               <Button variant="primary" type="submit" disabled={modalBusy}>
-                {modalBusy ? "Unlocking…" : "Unlock place"}
+                {modalBusy ? "Unlocking…" : "Unlock space"}
               </Button>
             </>
           }
@@ -1793,7 +1890,7 @@ export function SpaceWorkspace({
               }
               className="flat-input"
             >
-              <option value="">Place root</option>
+              <option value="">Space root</option>
               {folders.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
@@ -1870,7 +1967,7 @@ export function SpaceWorkspace({
               }
               className="flat-input"
             >
-              <option value="">Place root</option>
+              <option value="">Space root</option>
               {moveTargets.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { IconFolder, IconPhoto, IconFile } from "@tabler/icons-react";
 import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
 import { assetMatchReason, isImageMime } from "@/lib/matchReason";
@@ -95,92 +95,122 @@ export function SearchTypeahead({
     }
   }
 
+  function ResultRow({
+    icon,
+    title,
+    meta,
+    chip,
+    onClick,
+    thumb,
+  }: {
+    icon: ReactNode;
+    title: string;
+    meta?: string;
+    chip?: string;
+    onClick: () => void;
+    thumb?: string | null;
+  }) {
+    return (
+      <button type="button" role="option" className="search-hit" onClick={onClick}>
+        <span className="search-hit-media">
+          {thumb ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumb} alt="" />
+          ) : (
+            icon
+          )}
+        </span>
+        <span className="search-hit-copy">
+          <span className="search-hit-title">{title}</span>
+          {meta ? <span className="search-hit-meta">{meta}</span> : null}
+        </span>
+        {chip ? <span className="search-hit-chip">{chip}</span> : null}
+      </button>
+    );
+  }
+
   return (
     <div
-      className="absolute left-0 right-0 top-full mt-1 z-50 surface flat-sheet max-h-[min(70vh,420px)] overflow-y-auto p-1 search-results-stagger"
+      className="absolute left-0 right-0 top-full mt-1.5 z-50 search-panel max-h-[min(70vh,440px)] overflow-y-auto"
       role="listbox"
       aria-label="Search suggestions"
     >
       {loading && assets.length === 0 && folders.length === 0 ? (
-        <p className="type-caption px-3 py-3">Searching…</p>
+        <p className="search-panel-empty">Searching…</p>
       ) : null}
 
       {folders.length > 0 ? (
-        <div>
-          <p className="type-label px-3 py-2">Folders</p>
+        <div className="search-panel-group">
+          <p className="search-panel-label">Folders</p>
           {folders.map((f) => (
-            <button
+            <ResultRow
               key={f.id}
-              type="button"
-              role="option"
-              className="menu-row"
+              icon={<IconFolder size={16} stroke={1.75} />}
+              title={f.name}
+              meta={f.space_name || undefined}
+              chip="Folder"
               onClick={() => goFolder(f)}
-            >
-              <IconFolder size={16} className="text-[var(--ink-faint)]" />
-              <span className="flex-1 truncate type-body">{f.name}</span>
-              <span className="match-chip">Folder</span>
-            </button>
+            />
           ))}
         </div>
       ) : null}
 
       {images.length > 0 ? (
-        <div>
-          <p className="type-label px-3 py-2">Images</p>
+        <div className="search-panel-group">
+          <p className="search-panel-label">Images</p>
           {images.map((a) => (
-            <button
+            <ResultRow
               key={a.id}
-              type="button"
-              role="option"
-              className="menu-row"
+              icon={<IconPhoto size={16} stroke={1.75} />}
+              title={a.original_name || "Untitled"}
+              meta={
+                a.space_id ? spaceById.get(a.space_id)?.name : undefined
+              }
+              chip={assetMatchReason(q, a)}
+              thumb={
+                a.has_thumbnail
+                  ? `/api/media/thumbnail/${encodeURIComponent(a.file_id)}`
+                  : null
+              }
               onClick={() => goAsset(a)}
-            >
-              <IconPhoto size={16} className="text-[var(--ink-faint)]" />
-              <span className="flex-1 truncate type-body">
-                {a.original_name}
-              </span>
-              <span className="match-chip">{assetMatchReason(q, a)}</span>
-            </button>
+            />
           ))}
         </div>
       ) : null}
 
       {files.length > 0 ? (
-        <div>
-          <p className="type-label px-3 py-2">Files</p>
+        <div className="search-panel-group">
+          <p className="search-panel-label">Files</p>
           {files.map((a) => (
-            <button
+            <ResultRow
               key={a.id}
-              type="button"
-              role="option"
-              className="menu-row"
+              icon={<IconFile size={16} stroke={1.75} />}
+              title={a.original_name || "Untitled"}
+              meta={
+                a.space_id ? spaceById.get(a.space_id)?.name : undefined
+              }
+              chip={assetMatchReason(q, a)}
               onClick={() => goAsset(a)}
-            >
-              <IconFile size={16} className="text-[var(--ink-faint)]" />
-              <span className="flex-1 truncate type-body">
-                {a.original_name}
-              </span>
-              <span className="match-chip">{assetMatchReason(q, a)}</span>
-            </button>
+            />
           ))}
         </div>
       ) : null}
 
-      {!loading &&
-      folders.length === 0 &&
-      assets.length === 0 ? (
-        <p className="type-caption px-3 py-3">No matches</p>
+      {!loading && folders.length === 0 && assets.length === 0 ? (
+        <p className="search-panel-empty">No matches</p>
       ) : null}
 
       <button
         type="button"
-        className="menu-row text-[var(--accent)]"
+        className="search-hit search-hit--all"
         onClick={() => {
           onSelect();
           navigate(`/search?q=${encodeURIComponent(q)}`);
         }}
       >
-        View all results for “{q}”
+        <span className="search-hit-copy">
+          <span className="search-hit-title">View all results for “{q}”</span>
+        </span>
       </button>
     </div>
   );

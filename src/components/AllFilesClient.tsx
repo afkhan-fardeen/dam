@@ -14,6 +14,7 @@ import { canDownload, canEdit, type Asset, type Folder, type Space, type SpaceMe
 import { roleForSpace } from "@/lib/auth-client";
 import { readViewMode, writeViewMode, type ViewMode } from "@/lib/uiPrefs";
 import { queueAssetDownload } from "@/lib/download";
+import { queueAssetTrash } from "@/lib/trashJobs";
 import { useDriveChrome } from "@/components/DriveChrome";
 
 type AllFilesClientProps = {
@@ -29,7 +30,13 @@ export function AllFilesClient({
 }: AllFilesClientProps) {
   const searchParams = useSearchParams();
   const view = searchParams.get("view") || "all";
-  const { upsertJob, removeJob, libraryEpoch } = useDriveChrome();
+  const {
+    upsertJob,
+    removeJob,
+    libraryEpoch,
+    setTransferPanelOpen,
+    notifyLibraryChange,
+  } = useDriveChrome();
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,21 +208,25 @@ export function AllFilesClient({
 
   async function confirmTrash() {
     if (!pendingTrash) return;
-    setConfirmBusy(true);
-    try {
-      const res = await fetch(`/api/assets/${pendingTrash.id}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setAssets((list) => list.filter((a) => a.id !== pendingTrash.id));
-        if (selected?.id === pendingTrash.id) {
-          setSelected(null);
-          setDetailLaunch({ panel: false, move: false });
-        }
-      }
-      setPendingTrash(null);
-    } finally {
-      setConfirmBusy(false);
+    const asset = pendingTrash;
+    setPendingTrash(null);
+    if (selected?.id === asset.id) {
+      setSelected(null);
+      setDetailLaunch({ panel: false, move: false });
+    }
+    setAssets((list) => list.filter((a) => a.id !== asset.id));
+
+    const removed = await queueAssetTrash([asset], {
+      upsertJob,
+      setTransferPanelOpen,
+      notifyLibraryChange,
+    });
+    if (removed.length === 0) {
+      setError("Could not move file to trash.");
+      // Soft reload via library epoch / refetch
+      setAssets((list) =>
+        list.some((a) => a.id === asset.id) ? list : [...list, asset],
+      );
     }
   }
 

@@ -20,7 +20,7 @@ export type TransferJob = {
   id: string;
   name: string;
   progress: number;
-  kind: "upload" | "download";
+  kind: "upload" | "download" | "trash" | "delete" | "restore";
   status: "queued" | "uploading" | "downloading" | "saving" | "done" | "error";
   error?: string;
   /** Where to open after a successful upload */
@@ -79,7 +79,7 @@ type DriveChromeContextValue = {
   enqueueUploads: (items: UploadEnqueueItem[]) => void;
   /**
    * Bumps when library content changes (uploads, new folders, etc.).
-   * Place/file views subscribe and soft-reload — no full page refresh.
+   * Space/file views subscribe and soft-reload — no full page refresh.
    */
   libraryEpoch: number;
   notifyLibraryChange: () => void;
@@ -266,7 +266,6 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       ]);
 
       queueRef.current.push(...queued);
-      setTransferPanelOpen(true);
       void pumpUploads();
     },
     [pumpUploads],

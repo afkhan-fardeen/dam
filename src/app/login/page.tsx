@@ -168,7 +168,7 @@ export default function LoginPage() {
       >
         <header className="login-card-header">
           <h1 className="login-brand">Assets</h1>
-          <p className="type-caption">Sign in to your places</p>
+          <p className="type-caption">Sign in to your spaces</p>
         </header>
 
         <label className="login-field">

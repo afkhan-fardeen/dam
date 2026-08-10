@@ -63,13 +63,13 @@ export function AdminActivityClient() {
   }, [load]);
 
   return (
-    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
+    <div className="admin-panel">
       <AdminTabs />
-      <div className="flex flex-wrap gap-2 overflow-x-auto">
+      <div className="admin-filters">
         <select
           value={spaceId}
           onChange={(e) => setSpaceId(e.target.value)}
-          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[140px]"
+          className="admin-input min-w-[140px]"
         >
           <option value="">All spaces</option>
           {spaces.map((b) => (
@@ -81,7 +81,7 @@ export function AdminActivityClient() {
         <select
           value={userId}
           onChange={(e) => setUserId(e.target.value)}
-          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[140px]"
+          className="admin-input min-w-[140px]"
         >
           <option value="">All people</option>
           {users.map((u) => (
@@ -93,7 +93,7 @@ export function AdminActivityClient() {
         <select
           value={action}
           onChange={(e) => setAction(e.target.value)}
-          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[140px]"
+          className="admin-input min-w-[140px]"
         >
           <option value="">All actions</option>
           {ACTIONS.map((a) => (
@@ -108,7 +108,7 @@ export function AdminActivityClient() {
             type="date"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-            className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[9rem]"
+            className="admin-input min-w-[9rem]"
           />
         </label>
         <label className="flex items-center gap-1.5 type-caption text-[var(--ink-soft)]">
@@ -117,21 +117,21 @@ export function AdminActivityClient() {
             type="date"
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 min-w-[9rem]"
+            className="admin-input min-w-[9rem]"
           />
         </label>
       </div>
 
-      <div className="flex flex-col gap-0.5">
+      <div className="admin-list">
         {entries.length === 0 ? (
-          <p className="px-2 py-6 type-body text-[var(--ink-soft)]">
+          <p className="admin-empty">
             No activity yet.
           </p>
         ) : (
           entries.map((e) => (
             <div
               key={e.id}
-              className="px-2 py-2.5 type-body rounded-[12px] hover:bg-white/45"
+              className="px-2 py-2.5 type-body hover:bg-[var(--surface-2)]"
             >
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
                 <span className="text-base-content">

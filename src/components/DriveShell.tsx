@@ -7,6 +7,7 @@ import {
   IconFolder,
   IconKey,
   IconLogout,
+  IconLayoutSidebar,
   IconMenu2,
   IconSettings,
   IconUpload,
@@ -103,8 +104,34 @@ export function DriveShell({
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const showSidebar = !onEntity;
+
+  useEffect(() => {
+    try {
+      setSidebarCollapsed(
+        window.localStorage.getItem("dam-sidebar-collapsed") === "1",
+      );
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(
+          "dam-sidebar-collapsed",
+          next ? "1" : "0",
+        );
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     setQuery(searchParams.get("q") || "");
@@ -119,7 +146,7 @@ export function DriveShell({
   function uploadBlockedReason(): string | undefined {
     if (serverStatus === "checking") return "Checking PC…";
     if (!online) return "File server unavailable — uploads and previews may fail";
-    if (!defaultUploadSpaceId) return "No place to upload — ask an admin";
+    if (!defaultUploadSpaceId) return "No space to upload — ask an admin";
     if (view === "trash") return "Leave trash to upload";
     return undefined;
   }
@@ -200,7 +227,7 @@ export function DriveShell({
     spaces.find((s) => s.id === shellUploadSpaceId) ?? null;
   const uploadFolderId = activeSlug ? searchParams.get("folder") : null;
   const [uploadFolderName, setUploadFolderName] = useState<string | null>(null);
-  const [uploadSpaceName, setUploadSpaceName] = useState("Place");
+  const [uploadSpaceName, setUploadSpaceName] = useState("Space");
 
   useEffect(() => {
     if (!uploadOpen) return;
@@ -216,7 +243,7 @@ export function DriveShell({
       (activeSlug && activeSpace?.name) ||
         uploadSpace?.name ||
         last?.spaceName ||
-        "Place",
+        "Space",
     );
   }, [
     uploadOpen,
@@ -234,15 +261,16 @@ export function DriveShell({
 
   const showTopSearch = !onAdmin && !onEntity;
 
+  // Close mobile drawer on route change only — not on folder query updates.
   useEffect(() => {
     setSidebarOpen(false);
-  }, [pathname, searchParams]);
+  }, [pathname]);
 
   return (
     <div
       className={`app-shell min-h-screen flex flex-col relative bg-[var(--bg)]${
         showSidebar ? " has-sidebar" : ""
-      }`}
+      }${showSidebar && sidebarCollapsed ? " sidebar-collapsed" : ""}`}
     >
       {viewingAs ? (
         <div className="shrink-0 surface mx-3 mt-2 px-4 py-2 flex items-center justify-between gap-3 type-body">
@@ -255,108 +283,6 @@ export function DriveShell({
         </div>
       ) : null}
 
-      <TopBar
-        brandLabel="Assets"
-        brandHref="/"
-        serverStatus={serverStatus}
-        leading={
-          showSidebar ? (
-            <button
-              type="button"
-              className="topbar-menu-btn"
-              aria-label="Open navigation"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <IconMenu2 size={20} stroke={1.75} />
-            </button>
-          ) : undefined
-        }
-        center={
-          showTopSearch ? (
-            <SearchField
-              value={query}
-              onChange={setQuery}
-              onSubmit={submitSearch}
-              onClear={clearSearch}
-              placeholder="Search files and folders…"
-              showCmdK={!showHomeHero}
-              slim
-            />
-          ) : null
-        }
-        trailing={
-          <div className="topbar-actions">
-            {!onAdmin && !onEntity ? (
-              <>
-                {activeSlug ? (
-                  <button
-                    type="button"
-                    className={`topbar-action-btn${!editable ? " is-disabled" : ""}`}
-                    aria-disabled={!editable}
-                    title={editable ? "New folder" : "View only"}
-                    onClick={() => {
-                      if (!editable) {
-                        setActionToast("View only — ask an editor");
-                        return;
-                      }
-                      requestNewFolder();
-                    }}
-                  >
-                    <IconFolder size={16} stroke={1.75} />
-                    <span className="topbar-action-label">New folder</span>
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className={`topbar-action-btn topbar-action-btn--primary${
-                    !(canShellUpload && (!activeSlug || editable))
-                      ? " is-disabled"
-                      : ""
-                  }`}
-                  aria-disabled={!(canShellUpload && (!activeSlug || editable))}
-                  title={uploadTitle || "Upload"}
-                  onClick={() => {
-                    if (!(canShellUpload && (!activeSlug || editable))) {
-                      if (uploadTitle) setActionToast(uploadTitle);
-                      return;
-                    }
-                    openUpload(activeSpace?.id ?? defaultUploadSpaceId);
-                  }}
-                >
-                  <IconUpload size={16} stroke={1.75} />
-                  <span className="topbar-action-label">Upload</span>
-                </button>
-              </>
-            ) : null}
-            <Menu trigger={avatarTrigger}>
-              {profile.is_admin ? (
-                <Link href="/admin/spaces" className="menu-row">
-                  <IconSettings size={15} /> Admin
-                </Link>
-              ) : null}
-              <button
-                type="button"
-                className="menu-row"
-                onClick={() => {
-                  setPasswordOpen(true);
-                  setPasswordMsg(null);
-                }}
-              >
-                <IconKey size={15} /> Settings
-              </button>
-              <div className="card-divider" />
-              <button
-                type="button"
-                className="menu-row menu-row-danger"
-                onClick={() => void signOut()}
-              >
-                <IconLogout size={15} /> Sign out
-              </button>
-            </Menu>
-          </div>
-        }
-      />
-
       <div className="app-body flex-1 min-h-0 flex relative">
         {showSidebar ? (
           <AppSidebar
@@ -365,16 +291,152 @@ export function DriveShell({
             open={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
             mode={onAdmin ? "admin" : "employee"}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={toggleSidebarCollapsed}
+            profile={profile}
+            serverStatus={serverStatus}
+            onOpenSettings={() => {
+              setPasswordOpen(true);
+              setPasswordMsg(null);
+            }}
+            onSignOut={() => void signOut()}
           />
         ) : null}
 
-        <main
-          className={`flat-content-root flex-1 min-w-0 ${
-            showHomeHero ? "" : "overflow-auto pb-6 px-4 sm:px-6"
-          }`}
-        >
-          {children}
-        </main>
+        <div className="app-main flex-1 min-w-0 min-h-0 flex flex-col">
+          <TopBar
+            brandLabel=""
+            brandHref="/"
+            showClock
+            leading={
+              showSidebar ? (
+                <>
+                  <button
+                    type="button"
+                    className="topbar-menu-btn"
+                    aria-label="Open navigation"
+                    onClick={() => setSidebarOpen(true)}
+                  >
+                    <IconMenu2 size={20} stroke={1.75} />
+                  </button>
+                  <button
+                    type="button"
+                    className="topbar-collapse-btn"
+                    aria-label={
+                      sidebarCollapsed
+                        ? "Expand sidebar"
+                        : "Collapse sidebar"
+                    }
+                    title={
+                      sidebarCollapsed
+                        ? "Expand sidebar"
+                        : "Collapse sidebar"
+                    }
+                    onClick={toggleSidebarCollapsed}
+                  >
+                    <IconLayoutSidebar size={18} stroke={1.75} />
+                  </button>
+                </>
+              ) : undefined
+            }
+            search={
+              showTopSearch ? (
+                <SearchField
+                  value={query}
+                  onChange={setQuery}
+                  onSubmit={submitSearch}
+                  onClear={clearSearch}
+                  placeholder="Search files and folders…"
+                  showCmdK={!showHomeHero}
+                  slim
+                />
+              ) : null
+            }
+            trailing={
+              <div className="topbar-actions">
+                {!onAdmin && !onEntity ? (
+                  <>
+                    {activeSlug ? (
+                      <button
+                        type="button"
+                        className={`topbar-action-btn${!editable ? " is-disabled" : ""}`}
+                        aria-disabled={!editable}
+                        title={editable ? "New folder" : "View only"}
+                        onClick={() => {
+                          if (!editable) {
+                            setActionToast("View only — ask an editor");
+                            return;
+                          }
+                          requestNewFolder();
+                        }}
+                      >
+                        <IconFolder size={16} stroke={1.75} />
+                        <span className="topbar-action-label">New folder</span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className={`topbar-action-btn topbar-action-btn--primary${
+                        !(canShellUpload && (!activeSlug || editable))
+                          ? " is-disabled"
+                          : ""
+                      }`}
+                      aria-disabled={
+                        !(canShellUpload && (!activeSlug || editable))
+                      }
+                      title={uploadTitle || "Upload"}
+                      onClick={() => {
+                        if (!(canShellUpload && (!activeSlug || editable))) {
+                          if (uploadTitle) setActionToast(uploadTitle);
+                          return;
+                        }
+                        openUpload(activeSpace?.id ?? defaultUploadSpaceId);
+                      }}
+                    >
+                      <IconUpload size={16} stroke={1.75} />
+                      <span className="topbar-action-label">Upload</span>
+                    </button>
+                  </>
+                ) : null}
+                {!showSidebar ? (
+                  <Menu trigger={avatarTrigger}>
+                    {profile.is_admin ? (
+                      <Link href="/admin/spaces" className="menu-row">
+                        <IconSettings size={15} /> Admin
+                      </Link>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="menu-row"
+                      onClick={() => {
+                        setPasswordOpen(true);
+                        setPasswordMsg(null);
+                      }}
+                    >
+                      <IconKey size={15} /> Settings
+                    </button>
+                    <div className="card-divider" />
+                    <button
+                      type="button"
+                      className="menu-row menu-row-danger"
+                      onClick={() => void signOut()}
+                    >
+                      <IconLogout size={15} /> Sign out
+                    </button>
+                  </Menu>
+                ) : null}
+              </div>
+            }
+          />
+
+          <main
+            className={`flat-content-root flex-1 min-h-0 min-w-0 ${
+              showHomeHero ? "overflow-auto" : "overflow-auto pb-6 px-4 sm:px-6"
+            }`}
+          >
+            {children}
+          </main>
+        </div>
       </div>
 
       {actionToast ? (

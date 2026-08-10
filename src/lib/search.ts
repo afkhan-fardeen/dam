@@ -187,6 +187,38 @@ async function assetIdsForTag(
   return [...new Set((links ?? []).map((r) => r.asset_id as string))];
 }
 
+export async function countFolderAssets(
+  supabase: SupabaseClient,
+  options: {
+    spaceId: string;
+    folderId: string | null;
+    tag?: string | null;
+  },
+): Promise<number> {
+  let query = supabase
+    .from("assets")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active")
+    .eq("space_id", options.spaceId);
+
+  if (options.folderId) {
+    query = query.eq("folder_id", options.folderId);
+  } else {
+    query = query.is("folder_id", null);
+  }
+
+  const tag = emptyToNull(options.tag);
+  if (tag) {
+    const ids = await assetIdsForTag(supabase, tag);
+    if (ids.length === 0) return 0;
+    query = query.in("id", ids);
+  }
+
+  const { count, error } = await query;
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function listFolderAssets(
   supabase: SupabaseClient,
   options: {
@@ -194,15 +226,19 @@ export async function listFolderAssets(
     folderId: string | null;
     tag?: string | null;
     limit?: number;
+    offset?: number;
   },
 ): Promise<Asset[]> {
+  const limit = options.limit ?? 48;
+  const offset = options.offset ?? 0;
+
   let query = supabase
     .from("assets")
     .select(ASSET_COLS)
     .eq("status", "active")
     .eq("space_id", options.spaceId)
     .order("created_at", { ascending: false })
-    .limit(options.limit ?? 48);
+    .range(offset, offset + limit - 1);
 
   if (options.folderId) {
     query = query.eq("folder_id", options.folderId);
@@ -256,20 +292,64 @@ export async function listRecentAssets(
   return attachTags(supabase, (data ?? []) as Asset[]);
 }
 
+export async function countTrashAssets(
+  supabase: SupabaseClient,
+  options: { spaceIds: string[] },
+): Promise<number> {
+  if (options.spaceIds.length === 0) return 0;
+  const { count, error } = await supabase
+    .from("assets")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "deleted")
+    .in("space_id", options.spaceIds);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function listTrashAssets(
   supabase: SupabaseClient,
-  options: { spaceId: string; limit?: number },
+  options: {
+    spaceId?: string;
+    spaceIds?: string[];
+    limit?: number;
+    offset?: number;
+  },
 ): Promise<Asset[]> {
+  const limit = options.limit ?? 48;
+  const offset = options.offset ?? 0;
+  const spaceIds = options.spaceIds?.length
+    ? options.spaceIds
+    : options.spaceId
+      ? [options.spaceId]
+      : [];
+  if (spaceIds.length === 0) return [];
+
   const { data, error } = await supabase
     .from("assets")
     .select(ASSET_COLS)
     .eq("status", "deleted")
-    .eq("space_id", options.spaceId)
+    .in("space_id", spaceIds)
     .order("created_at", { ascending: false })
-    .limit(options.limit ?? 48);
+    .range(offset, offset + limit - 1);
 
   if (error) throw error;
   return attachTags(supabase, (data ?? []) as Asset[]);
+}
+
+/** Lightweight refs for empty-trash / bulk permanent delete. */
+export async function listTrashAssetRefs(
+  supabase: SupabaseClient,
+  options: { spaceIds: string[] },
+): Promise<{ id: string; original_name: string | null }[]> {
+  if (options.spaceIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("assets")
+    .select("id,original_name")
+    .eq("status", "deleted")
+    .in("space_id", options.spaceIds)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as { id: string; original_name: string | null }[];
 }
 
 async function searchOneSpace(

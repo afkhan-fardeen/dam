@@ -256,7 +256,7 @@ export function AdminUsersClient() {
   const isSelf = Boolean(editing && meId && editing.id === meId);
 
   return (
-    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
+    <div className="admin-panel">
       <AdminTabs />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -264,7 +264,7 @@ export function AdminUsersClient() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search people…"
-          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 max-w-xs"
+          className="admin-input max-w-xs"
         />
         <Button variant="primary" type="button" onClick={openCreate}>
           New person
@@ -272,10 +272,10 @@ export function AdminUsersClient() {
       </div>
 
       {error && !modalOpen && !resetUser && !deleteTarget ? (
-        <p className="type-caption text-[#ff3b30]">{error}</p>
+        <p className="type-caption text-[var(--danger)]">{error}</p>
       ) : null}
 
-      <div className="flex flex-col gap-0.5">
+      <div className="admin-list">
         {filtered.map((u) => {
           const userMemberships = memberships.filter((m) => m.user_id === u.id);
           const inactive = u.is_active === false;
@@ -283,7 +283,7 @@ export function AdminUsersClient() {
           return (
             <div
               key={u.id}
-              className={`px-2 py-3 rounded-[12px] hover:bg-white/45 flex flex-col gap-2 ${
+              className={`px-2 py-3 hover:bg-[var(--surface-2)] flex flex-col gap-2 ${
                 inactive ? "opacity-45" : ""
               }`}
             >
@@ -302,7 +302,7 @@ export function AdminUsersClient() {
                 <div className="ml-auto flex flex-wrap gap-1">
                   <button
                     type="button"
-                    className="btn btn-ghost btn-xs"
+                    className="admin-ghost-btn"
                     onClick={() => openEdit(u)}
                   >
                     Edit
@@ -310,7 +310,7 @@ export function AdminUsersClient() {
                   {!u.is_admin ? (
                     <button
                       type="button"
-                      className="btn btn-ghost btn-xs"
+                      className="admin-ghost-btn"
                       onClick={() => void viewAs(u.id)}
                     >
                       View as
@@ -318,7 +318,7 @@ export function AdminUsersClient() {
                   ) : null}
                   <button
                     type="button"
-                    className="btn btn-ghost btn-xs"
+                    className="admin-ghost-btn"
                     onClick={() => {
                       setResetUser(u);
                       setResetPassword(generatePassword());
@@ -331,7 +331,7 @@ export function AdminUsersClient() {
                   {!self ? (
                     <button
                       type="button"
-                      className="btn btn-ghost btn-xs text-[#ff3b30]"
+                      className="admin-ghost-btn is-danger"
                       onClick={() => {
                         setError(null);
                         setDeleteTarget(u);
@@ -345,7 +345,7 @@ export function AdminUsersClient() {
               <div className="flex flex-wrap gap-1.5">
                 {userMemberships.length === 0 ? (
                   <span className="type-caption text-[var(--ink-soft)]">
-                    {u.is_admin ? "Full admin access" : "No place access"}
+                    {u.is_admin ? "Full admin access" : "No space access"}
                   </span>
                 ) : (
                   userMemberships.map((m) => (
@@ -484,7 +484,7 @@ export function AdminUsersClient() {
                     </span>
                     <button
                       type="button"
-                      className="btn btn-ghost btn-xs"
+                      className="admin-ghost-btn"
                       onClick={() => setPassword(generatePassword())}
                     >
                       Generate
@@ -530,7 +530,7 @@ export function AdminUsersClient() {
 
               <div className="flex flex-col gap-2">
                 <p className="type-caption text-[var(--ink-soft)]">
-                  Place access
+                  Space access
                 </p>
                 {rows.map((row) => (
                   <div
@@ -552,7 +552,7 @@ export function AdminUsersClient() {
                           ),
                         )
                       }
-                      className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 w-full"
+                      className="admin-input w-full"
                     >
                       {spaces.map((s) => (
                         <option key={s.id} value={s.id}>
@@ -571,7 +571,7 @@ export function AdminUsersClient() {
                           ),
                         )
                       }
-                      className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30 w-full"
+                      className="admin-input w-full"
                     >
                       {ROLE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
@@ -586,7 +586,7 @@ export function AdminUsersClient() {
                           prev.filter((r) => r.key !== row.key),
                         )
                       }
-                      className="btn btn-ghost btn-xs btn-circle"
+                      className="admin-ghost-btn"
                       aria-label="Remove"
                     >
                       ×
@@ -597,14 +597,14 @@ export function AdminUsersClient() {
                   <button
                     type="button"
                     onClick={addRow}
-                    className="btn btn-ghost btn-sm self-start"
+                    className="admin-ghost-btn"
                   >
-                    + Add place
+                    + Add space
                   </button>
                 ) : null}
               </div>
               {error ? (
-                <p className="type-caption text-[#ff3b30]">{error}</p>
+                <p className="type-caption text-[var(--danger)]">{error}</p>
               ) : null}
             </form>
           )}
@@ -666,7 +666,7 @@ export function AdminUsersClient() {
                   </span>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-xs"
+                    className="admin-ghost-btn"
                     onClick={() => setResetPassword(generatePassword())}
                   >
                     Generate
@@ -681,7 +681,7 @@ export function AdminUsersClient() {
                 />
               </div>
               {error ? (
-                <p className="type-caption text-[#ff3b30]">{error}</p>
+                <p className="type-caption text-[var(--danger)]">{error}</p>
               ) : null}
             </form>
           )}
@@ -693,7 +693,7 @@ export function AdminUsersClient() {
           title="Delete permanently?"
           message={`This permanently removes ${
             deleteTarget.full_name || deleteTarget.email || "this person"
-          } and their login. Place memberships are cleared. Uploaded files stay. This cannot be undone.`}
+          } and their login. Space memberships are cleared. Uploaded files stay. This cannot be undone.`}
           confirmLabel="Delete permanently"
           danger
           busy={busy}

@@ -37,13 +37,13 @@ export function BrowseClient({ spaces }: BrowseClientProps) {
   return (
     <div className="flex flex-col gap-5 w-full max-w-2xl mx-auto pb-8 pt-2">
       <div>
-        <h1 className="type-page">Places</h1>
-        <p className="type-caption mt-1">Open a place to browse files.</p>
+        <h1 className="type-page">Spaces</h1>
+        <p className="type-caption mt-1">Open a space to browse files.</p>
       </div>
 
       {spaces.length === 0 ? (
         <div className="surface empty-state">
-          <p className="type-title">No places yet</p>
+          <p className="type-title">No spaces yet</p>
           <p className="type-caption mt-2">Ask an admin for access.</p>
         </div>
       ) : (

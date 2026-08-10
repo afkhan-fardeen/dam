@@ -7,6 +7,8 @@ import {
   attachFavorites,
   attachTags,
   filterUnlockedAssets,
+  countFolderAssets,
+  countTrashAssets,
   listFolderAssets,
   listRecentAssets,
   listTrashAssets,
@@ -31,6 +33,12 @@ export async function GET(request: Request) {
     const tag = searchParams.get("tag");
     const view = searchParams.get("view") ?? "all";
     const starred = searchParams.get("starred") === "1" || view === "starred";
+    const page = Math.max(1, Number(searchParams.get("page") || "1") || 1);
+    const pageSize = Math.min(
+      48,
+      Math.max(1, Number(searchParams.get("limit") || "24") || 24),
+    );
+    const offset = (page - 1) * pageSize;
 
     const entityId = searchParams.get("entity");
 
@@ -125,46 +133,31 @@ export async function GET(request: Request) {
       }
 
       if (view === "trash") {
-        if (!profile.is_admin) {
-          const editorIds = (memberships ?? [])
-            .filter((m) => m.role === "editor")
-            .map((m) => m.space_id as string);
-          if (editorIds.length === 0) {
-            return NextResponse.json({
-              assets: [],
-              count: 0,
-              view,
-              global: true,
-            });
-          }
-          const chunks = await Promise.all(
-            editorIds.map((id) => listTrashAssets(supabase, { spaceId: id })),
-          );
-          const assets = chunks
-            .flat()
-            .sort((a, b) =>
-              (b.created_at || "").localeCompare(a.created_at || ""),
-            );
-          const favorited = await attachFavorites(
-            supabase,
-            effectiveUserId,
-            assets,
-          );
+        const editorIds = profile.is_admin
+          ? allSpaceIds
+          : (memberships ?? [])
+              .filter((m) => m.role === "editor")
+              .map((m) => m.space_id as string);
+        if (editorIds.length === 0) {
           return NextResponse.json({
-            assets: favorited,
-            count: favorited.length,
+            assets: [],
+            count: 0,
+            total: 0,
+            page,
+            pageSize,
+            hasMore: false,
             view,
             global: true,
           });
         }
-        const chunks = await Promise.all(
-          allSpaceIds.map((id) => listTrashAssets(supabase, { spaceId: id })),
-        );
-        const assets = chunks
-          .flat()
-          .sort((a, b) =>
-            (b.created_at || "").localeCompare(a.created_at || ""),
-          );
+        const [assets, total] = await Promise.all([
+          listTrashAssets(supabase, {
+            spaceIds: editorIds,
+            limit: pageSize,
+            offset,
+          }),
+          countTrashAssets(supabase, { spaceIds: editorIds }),
+        ]);
         const favorited = await attachFavorites(
           supabase,
           effectiveUserId,
@@ -173,6 +166,10 @@ export async function GET(request: Request) {
         return NextResponse.json({
           assets: favorited,
           count: favorited.length,
+          total,
+          page,
+          pageSize,
+          hasMore: offset + favorited.length < total,
           view,
           global: true,
         });
@@ -216,11 +213,18 @@ export async function GET(request: Request) {
           { status: 403 },
         );
       }
-      const assets = await listTrashAssets(supabase, { spaceId });
+      const assets = await listTrashAssets(supabase, {
+        spaceId,
+        limit: pageSize,
+        offset,
+      });
       const favorited = await attachFavorites(supabase, effectiveUserId, assets);
       return NextResponse.json({
         assets: favorited,
         count: favorited.length,
+        page,
+        pageSize,
+        hasMore: favorited.length === pageSize,
         view,
       });
     }
@@ -295,16 +299,28 @@ export async function GET(request: Request) {
       }
     }
 
-    const assets = await listFolderAssets(supabase, {
+    const folderOpts = {
       spaceId,
       folderId: folderId || null,
       tag,
-    });
+    };
+    const [assets, total] = await Promise.all([
+      listFolderAssets(supabase, {
+        ...folderOpts,
+        limit: pageSize,
+        offset,
+      }),
+      countFolderAssets(supabase, folderOpts),
+    ]);
     const favorited = await attachFavorites(supabase, effectiveUserId, assets);
 
     return NextResponse.json({
       assets: favorited,
       count: favorited.length,
+      total,
+      page,
+      pageSize,
+      hasMore: offset + favorited.length < total,
       view: "all",
     });
   } catch (error) {

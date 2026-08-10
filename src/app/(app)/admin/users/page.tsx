@@ -7,12 +7,12 @@ export default async function AdminUsersPage() {
   if (!ok) redirect("/");
 
   return (
-    <div className="max-w-4xl mx-auto w-full">
-      <h1 className="type-page">
+    <div className="admin-page">
+      <h1 className="admin-page-title">
         Users
       </h1>
-      <p className="type-caption mt-1 mb-2">
-        Edit people, place roles, admin access, or delete accounts permanently.
+      <p className="admin-page-caption">
+        Edit people, space roles, admin access, or delete accounts permanently.
         Deactivated people stay in the list, dimmed.
       </p>
       <AdminUsersClient />

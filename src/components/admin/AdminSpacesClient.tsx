@@ -196,7 +196,7 @@ export function AdminSpacesClient() {
     isArchived?: boolean;
   }) {
     return (
-      <div className="flex items-center gap-3 px-2 py-3 rounded-[12px] hover:bg-white/45">
+      <div className="admin-row">
         <span
           className="h-3 w-3 rounded-full shrink-0"
           style={{ backgroundColor: s.color }}
@@ -210,19 +210,19 @@ export function AdminSpacesClient() {
             {formatBytes(storage.get(s.id) || 0)}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="admin-row-actions">
           {!isArchived ? (
             <>
               <button
                 type="button"
-                className="btn btn-ghost btn-xs"
+                className="admin-ghost-btn"
                 onClick={() => openEdit(s)}
               >
                 Edit
               </button>
               <button
                 type="button"
-                className="btn btn-ghost btn-xs"
+                className="admin-ghost-btn"
                 onClick={() => void archiveSpace(s)}
               >
                 Archive
@@ -232,14 +232,14 @@ export function AdminSpacesClient() {
             <>
               <button
                 type="button"
-                className="btn btn-ghost btn-xs"
+                className="admin-ghost-btn"
                 onClick={() => void restoreSpace(s)}
               >
                 Restore
               </button>
               <button
                 type="button"
-                className="btn btn-ghost btn-xs text-[#ff3b30]"
+                className="admin-ghost-btn is-danger"
                 onClick={() => {
                   setDeleteTarget(s);
                   setConfirmName("");
@@ -256,24 +256,24 @@ export function AdminSpacesClient() {
   }
 
   return (
-    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
+    <div className="admin-panel">
       <AdminTabs />
 
       <div className="flex items-center justify-between gap-3">
         <p className="type-body text-[var(--ink-soft)]">
           {spaces.length} active
         </p>
-        <button type="button" onClick={openCreate} className="btn-glass-primary px-4 py-2 text-[13px] font-medium">
+        <Button type="button" variant="primary" onClick={openCreate}>
           New space
-        </button>
+        </Button>
       </div>
 
-      <div className="flex flex-col gap-0.5">
+      <div className="admin-list">
         {spaces.map((s) => (
           <SpaceRow key={s.id} s={s} />
         ))}
         {spaces.length === 0 ? (
-          <p className="type-body text-[var(--ink-soft)] py-6">No spaces yet.</p>
+          <p className="admin-empty">No spaces yet.</p>
         ) : null}
       </div>
 
@@ -333,7 +333,7 @@ export function AdminSpacesClient() {
 
             <div className="flex flex-col gap-2">
               <p className="type-caption text-[var(--ink-soft)]">Type</p>
-              <div className="flex rounded-[12px] bg-base-200 p-0.5">
+              <div className="flex bg-base-200 p-0.5">
                 {(
                   [
                     { key: "brand", label: "Brand" },
@@ -408,7 +408,7 @@ export function AdminSpacesClient() {
               />
             ) : null}
 
-            {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
+            {error ? <p className="type-caption text-[var(--danger)]">{error}</p> : null}
           </form>
         </AdminModal>
       ) : null}
@@ -451,7 +451,7 @@ export function AdminSpacesClient() {
               className="input input-bordered w-full"
               autoFocus
             />
-            {error ? <p className="type-caption text-[#ff3b30]">{error}</p> : null}
+            {error ? <p className="type-caption text-[var(--danger)]">{error}</p> : null}
           </form>
         </AdminModal>
       ) : null}

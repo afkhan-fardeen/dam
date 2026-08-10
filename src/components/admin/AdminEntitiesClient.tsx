@@ -121,18 +121,18 @@ export function AdminEntitiesClient() {
   }
 
   return (
-    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
+    <div className="admin-panel">
       <AdminTabs />
 
-      <div className="flex flex-wrap gap-2 px-2">
+      <div className="admin-filters">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search entities…"
-          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30"
+          className="admin-input"
         />
         <select
-          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30"
+          className="admin-input"
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
         >
@@ -144,7 +144,7 @@ export function AdminEntitiesClient() {
           ))}
         </select>
         <select
-          className="glass-input type-body px-2 py-1.5 rounded-xl bg-white/30"
+          className="admin-input"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
@@ -155,11 +155,11 @@ export function AdminEntitiesClient() {
         </select>
       </div>
 
-      {error ? <p className="type-body text-[#ff3b30] px-2">{error}</p> : null}
+      {error ? <p className="type-body text-[var(--danger)] px-2">{error}</p> : null}
 
-      <div className="flex flex-col gap-0.5">
+      <div className="admin-list">
         {entities.length === 0 ? (
-          <p className="px-2 py-6 type-body text-[var(--ink-soft)] max-w-xl">
+          <p className="admin-empty max-w-xl">
             No entities yet. People and organizations appear here when editors
             link them during upload or from a file&apos;s Relations panel. Use
             merge later to clean up near-duplicates.
@@ -168,7 +168,7 @@ export function AdminEntitiesClient() {
           entities.map((e) => (
             <div
               key={e.id}
-              className="px-2 py-3 hover:bg-white/45 flex flex-wrap items-center gap-2"
+              className="admin-row"
             >
               <span
                 className="h-1.5 w-1.5 shrink-0"
@@ -197,7 +197,7 @@ export function AdminEntitiesClient() {
                 <div className="ml-auto flex flex-wrap gap-1">
                   <button
                     type="button"
-                    className="btn btn-ghost btn-xs"
+                    className="admin-ghost-btn"
                     onClick={() => {
                       setEditTarget(e);
                       setEditName(e.name);
@@ -209,7 +209,7 @@ export function AdminEntitiesClient() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-xs"
+                    className="admin-ghost-btn"
                     onClick={() => {
                       setMergeTarget(e);
                       setMergeIntoId("");
@@ -220,7 +220,7 @@ export function AdminEntitiesClient() {
                   </button>
                   <button
                     type="button"
-                    className="btn btn-ghost btn-xs"
+                    className="admin-ghost-btn"
                     onClick={() => setArchiveTarget(e)}
                   >
                     Archive
@@ -240,7 +240,7 @@ export function AdminEntitiesClient() {
             <>
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="admin-ghost-btn"
                 onClick={() => setEditTarget(null)}
               >
                 Cancel
@@ -248,7 +248,7 @@ export function AdminEntitiesClient() {
               <button
                 type="submit"
                 form="edit-entity-form"
-                className="btn btn-primary"
+                className="btn-flat-primary px-4 h-9 text-[13px] font-semibold"
                 disabled={busy}
               >
                 Save
@@ -294,7 +294,7 @@ export function AdminEntitiesClient() {
             <>
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="admin-ghost-btn"
                 onClick={() => setMergeTarget(null)}
               >
                 Cancel
@@ -302,7 +302,7 @@ export function AdminEntitiesClient() {
               <button
                 type="submit"
                 form="merge-entity-form"
-                className="btn btn-primary"
+                className="btn-flat-primary px-4 h-9 text-[13px] font-semibold"
                 disabled={busy || !mergeIntoId}
               >
                 Merge

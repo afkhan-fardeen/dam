@@ -7,11 +7,11 @@ export default async function AdminTagsPage() {
   if (!ok) redirect("/");
 
   return (
-    <div className="max-w-4xl mx-auto w-full">
-      <h1 className="type-page">
+    <div className="admin-page">
+      <h1 className="admin-page-title">
         Tags
       </h1>
-      <p className="type-caption mt-1 mb-2">
+      <p className="admin-page-caption">
         Rename, merge, or delete tags used across files.
       </p>
       <AdminTagsClient />

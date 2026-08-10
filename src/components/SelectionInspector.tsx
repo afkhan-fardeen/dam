@@ -80,7 +80,7 @@ export function SelectionInspector({
             <dd className="type-body mt-1 break-words">{single.original_name}</dd>
           </div>
           <div>
-            <dt className="type-label">Place</dt>
+            <dt className="type-label">Space</dt>
             <dd className="type-caption mt-1">{spaceName}</dd>
           </div>
           <div>

@@ -1,6 +1,10 @@
 "use client";
 
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { IconFolder, IconServer, IconStack2 } from "@tabler/icons-react";
 import { useDriveChrome } from "@/components/DriveChrome";
+import { SearchTypeahead } from "@/components/SearchTypeahead";
+import { SearchField } from "@/components/ui/SearchField";
 import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
 import {
   lastPlaceHref,
@@ -8,10 +12,11 @@ import {
   readLastPlace,
   type LastPlace,
 } from "@/lib/lastPlace";
-import { useEffect, useMemo, useState } from "react";
+import type { Space } from "@/lib/types";
 
 type HomeGlassProps = {
   profileName: string;
+  spaces: Space[];
 };
 
 type StoragePlace = {
@@ -43,12 +48,13 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-export function HomeGlass({ profileName }: HomeGlassProps) {
+export function HomeGlass({ profileName, spaces }: HomeGlassProps) {
   const navigate = useViewTransitionNavigate();
   const { serverStatus } = useDriveChrome();
   const [continuePlace, setContinuePlace] = useState<LastPlace | null>(null);
   const [storage, setStorage] = useState<StorageSummary | null>(null);
-  const [storageError, setStorageError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     setContinuePlace(readLastPlace());
@@ -60,11 +66,7 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
       try {
         const res = await fetch("/api/storage/summary");
         const json = await res.json();
-        if (cancelled) return;
-        if (!res.ok) {
-          setStorageError(json.error || "Could not load storage.");
-          return;
-        }
+        if (cancelled || !res.ok) return;
         setStorage({
           usedBytes: Number(json.usedBytes) || 0,
           quotaBytes:
@@ -76,7 +78,7 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
           places: (json.places as StoragePlace[]) ?? [],
         });
       } catch {
-        if (!cancelled) setStorageError("Could not load storage.");
+        /* ignore */
       }
     })();
     return () => {
@@ -95,108 +97,191 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
     return Math.min(100, (storage.usedBytes / storage.quotaBytes) * 100);
   }, [storage]);
 
-  const maxPlaceBytes = useMemo(() => {
-    if (!storage?.places.length) return 1;
-    return Math.max(1, ...storage.places.map((p) => p.bytes));
-  }, [storage]);
+  const placeRows = storage?.places?.length
+    ? storage.places
+    : spaces.map((s) => ({
+        space_id: s.id,
+        name: s.name,
+        slug: s.slug,
+        color: s.color,
+        bytes: 0,
+      }));
+
+  const maxPlaceBytes = Math.max(1, ...placeRows.map((p) => p.bytes));
+
+  const pcLabel =
+    serverStatus === "connected"
+      ? "Connected"
+      : serverStatus === "checking"
+        ? "Checking…"
+        : "Offline";
+  const pcTone =
+    serverStatus === "connected"
+      ? "ok"
+      : serverStatus === "checking"
+        ? "muted"
+        : "danger";
+
+  function onSearchSubmit(e: FormEvent) {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    setSearchOpen(false);
+    navigate(`/search?q=${encodeURIComponent(q)}`);
+  }
 
   return (
-    <div className="home-hub">
-      <div className="home-hub-inner">
-        <header className="home-hub-hero">
-          <h1 className="home-hub-greeting">
-            {greetingHour()}, {firstName}
-          </h1>
-
+    <div className="home-dash">
+      <div className="home-dash-inner">
+        <header className="home-dash-header">
+          <div>
+            <p className="home-dash-kicker">Library</p>
+            <h1 className="home-dash-greeting">
+              {greetingHour()}, {firstName}
+            </h1>
+          </div>
           {continuePlace ? (
             <button
               type="button"
-              className="home-hub-continue"
+              className="home-dash-continue"
               onClick={() => navigate(lastPlaceHref(continuePlace))}
             >
-              <span className="home-hub-continue-label">
-                Continue where you left off
-              </span>
-              <span className="home-hub-continue-place">
+              <span className="home-dash-continue-label">Continue</span>
+              <span className="home-dash-continue-place">
                 {lastPlaceLabel(continuePlace)}
               </span>
             </button>
           ) : (
             <button
               type="button"
-              className="home-hub-continue"
+              className="home-dash-continue"
               onClick={() => navigate("/browse")}
             >
-              <span className="home-hub-continue-label">Open a place</span>
-              <span className="home-hub-continue-place">
-                Browse places to get started
-              </span>
+              <span className="home-dash-continue-label">Get started</span>
+              <span className="home-dash-continue-place">Browse spaces</span>
             </button>
           )}
         </header>
 
-        <section className="home-hub-storage" aria-label="Library storage">
-          <div className="home-hub-storage-head">
-            <h2 className="home-hub-section-title">Library storage</h2>
-            {storage ? (
-              <p className="home-hub-storage-total">
-                {formatBytes(storage.usedBytes)} used
-                {storage.quotaBytes != null ? (
-                  <>
-                    {" "}
-                    · {formatBytes(storage.availableBytes ?? 0)} available
-                  </>
-                ) : null}
-              </p>
-            ) : (
-              <p className="home-hub-storage-total">
-                {storageError || "Loading…"}
-              </p>
-            )}
-          </div>
+        <div className="home-dash-search">
+          <SearchField
+            value={query}
+            onChange={(v) => {
+              setQuery(v);
+              setSearchOpen(v.trim().length >= 2);
+            }}
+            onSubmit={onSearchSubmit}
+            onClear={() => {
+              setQuery("");
+              setSearchOpen(false);
+            }}
+            placeholder="Search files, folders, tags…"
+            showCmdK={false}
+            autoFocus={false}
+            dropdown={
+              searchOpen ? (
+                <SearchTypeahead
+                  query={query}
+                  spaces={spaces}
+                  onClose={() => setSearchOpen(false)}
+                  onSelect={() => setSearchOpen(false)}
+                />
+              ) : null
+            }
+          />
+        </div>
 
-          {storage && storage.quotaBytes != null && usedPct != null ? (
-            <div
-              className="home-hub-quota"
-              role="meter"
-              aria-valuenow={Math.round(usedPct)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Storage used"
-            >
-              <div
-                className="home-hub-quota-fill"
-                style={{ width: `${usedPct}%` }}
-              />
+        <section className="home-dash-kpis" aria-label="Overview">
+          <article className="home-kpi">
+            <div className="home-kpi-icon" aria-hidden>
+              <IconStack2 size={18} stroke={1.75} />
             </div>
-          ) : null}
+            <div className="home-kpi-body">
+              <p className="home-kpi-label">Storage used</p>
+              <p className="home-kpi-value">
+                {storage ? formatBytes(storage.usedBytes) : "—"}
+              </p>
+              {storage?.quotaBytes != null ? (
+                <p className="home-kpi-meta">
+                  {formatBytes(storage.availableBytes ?? 0)} available
+                </p>
+              ) : (
+                <p className="home-kpi-meta">Across your spaces</p>
+              )}
+              {usedPct != null ? (
+                <div className="home-kpi-bar" aria-hidden>
+                  <span style={{ width: `${usedPct}%` }} />
+                </div>
+              ) : null}
+            </div>
+          </article>
 
-          {storage && storage.places.length > 0 ? (
-            <ul className="home-hub-places">
-              {storage.places.map((place) => {
-                const width = Math.max(
-                  4,
-                  (place.bytes / maxPlaceBytes) * 100,
-                );
+          <article className="home-kpi">
+            <div className="home-kpi-icon" aria-hidden>
+              <IconFolder size={18} stroke={1.75} />
+            </div>
+            <div className="home-kpi-body">
+              <p className="home-kpi-label">Spaces</p>
+              <p className="home-kpi-value">{spaces.length}</p>
+              <p className="home-kpi-meta">
+                {spaces.length === 1 ? "Space you can open" : "Spaces you can open"}
+              </p>
+            </div>
+          </article>
+
+          <article className={`home-kpi home-kpi--pc is-${pcTone}`}>
+            <div className="home-kpi-icon" aria-hidden>
+              <IconServer size={18} stroke={1.75} />
+            </div>
+            <div className="home-kpi-body">
+              <p className="home-kpi-label">File PC</p>
+              <p className="home-kpi-value">{pcLabel}</p>
+              <p className="home-kpi-meta">
+                {serverStatus === "connected"
+                  ? "Uploads and previews ready"
+                  : serverStatus === "checking"
+                    ? "Checking connection…"
+                    : "Uploads paused until online"}
+              </p>
+            </div>
+          </article>
+        </section>
+
+        <section className="home-dash-places" aria-label="Spaces">
+          <div className="home-dash-places-head">
+            <h2 className="home-dash-section-title">Your spaces</h2>
+            <button
+              type="button"
+              className="home-dash-link"
+              onClick={() => navigate("/browse")}
+            >
+              View all
+            </button>
+          </div>
+          {placeRows.length === 0 ? (
+            <p className="home-dash-empty">No spaces yet — ask an admin.</p>
+          ) : (
+            <ul className="home-dash-place-list">
+              {placeRows.map((place) => {
+                const width = Math.max(6, (place.bytes / maxPlaceBytes) * 100);
                 return (
                   <li key={place.space_id}>
                     <button
                       type="button"
-                      className="home-hub-place"
+                      className="home-dash-place"
                       onClick={() =>
                         navigate(`/s/${encodeURIComponent(place.slug)}`)
                       }
                     >
                       <span
-                        className="home-hub-place-dot"
+                        className="home-dash-place-dot"
                         style={{ backgroundColor: place.color }}
                         aria-hidden
                       />
-                      <span className="home-hub-place-main">
-                        <span className="home-hub-place-name">{place.name}</span>
-                        <span className="home-hub-place-bar" aria-hidden>
+                      <span className="home-dash-place-main">
+                        <span className="home-dash-place-name">{place.name}</span>
+                        <span className="home-dash-place-bar" aria-hidden>
                           <span
-                            className="home-hub-place-bar-fill"
                             style={{
                               width: `${width}%`,
                               backgroundColor: place.color,
@@ -204,7 +289,7 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
                           />
                         </span>
                       </span>
-                      <span className="home-hub-place-size">
+                      <span className="home-dash-place-size">
                         {formatBytes(place.bytes)}
                       </span>
                     </button>
@@ -212,22 +297,8 @@ export function HomeGlass({ profileName }: HomeGlassProps) {
                 );
               })}
             </ul>
-          ) : null}
+          )}
         </section>
-
-        <button
-          type="button"
-          className="home-hub-browse"
-          onClick={() => navigate("/browse")}
-        >
-          Browse places
-        </button>
-
-        {serverStatus === "offline" ? (
-          <p className="home-hub-offline" role="status">
-            File server unavailable — uploads paused
-          </p>
-        ) : null}
       </div>
     </div>
   );

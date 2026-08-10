@@ -7,9 +7,9 @@ export default async function AdminEntitiesPage() {
   if (!ok) redirect("/");
 
   return (
-    <div className="p-5 sm:p-8 max-w-5xl">
-      <h1 className="type-page">Entities</h1>
-      <p className="type-caption mt-1 mb-2">
+    <div className="admin-page">
+      <h1 className="admin-page-title">Entities</h1>
+      <p className="admin-page-caption">
         Merge duplicates, rename, and archive business entities.
       </p>
       <AdminEntitiesClient />

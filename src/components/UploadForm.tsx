@@ -98,7 +98,7 @@ export function UploadForm({
 
   const destFolderName =
     destFolderId == null
-      ? "Place root"
+      ? "Space root"
       : folders.find((f) => f.id === destFolderId)?.name ||
         (destFolderId === initialFolderId ? initialFolderName : null) ||
         "Folder";
@@ -354,7 +354,7 @@ export function UploadForm({
 
         <div className="flat-modal-body flex-1 overflow-y-auto">
           <label className="flat-modal-field">
-            <span className="flat-modal-label">Place</span>
+            <span className="flat-modal-label">Space</span>
             <select
               className="flat-input"
               value={destSpaceId}
@@ -394,7 +394,7 @@ export function UploadForm({
                 setDestFolderId(v || null);
               }}
             >
-              <option value="">Place root</option>
+              <option value="">Space root</option>
               {folderOptions.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.label}

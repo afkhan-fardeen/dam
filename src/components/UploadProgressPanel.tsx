@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { IconChevronDown, IconChevronUp, IconX } from "@tabler/icons-react";
 import Link from "next/link";
 import { useDriveChrome, type TransferJob } from "@/components/DriveChrome";
@@ -12,10 +12,16 @@ function statusLabel(job: TransferJob): string {
     case "uploading":
       return `${Math.round(job.progress)}%`;
     case "saving":
+      if (job.kind === "trash") return "Trashing…";
+      if (job.kind === "delete") return "Deleting…";
+      if (job.kind === "restore") return "Restoring…";
       return "Saving…";
     case "downloading":
       return `${Math.round(job.progress)}%`;
     case "done":
+      if (job.kind === "trash") return "Trashed";
+      if (job.kind === "delete") return "Deleted";
+      if (job.kind === "restore") return "Restored";
       return "Done";
     case "error":
       return job.error || "Failed";
@@ -47,9 +53,18 @@ export function UploadProgressPanel() {
         j.status === "uploading" ||
         j.status === "saving"),
   );
+  const trashing = jobs.filter(
+    (j) =>
+      (j.kind === "trash" || j.kind === "delete" || j.kind === "restore") &&
+      (j.status === "queued" || j.status === "saving"),
+  );
   const done = jobs.filter((j) => j.status === "done");
   const errored = jobs.filter((j) => j.status === "error");
   const uploadJobs = jobs.filter((j) => j.kind === "upload");
+  const trashJobs = jobs.filter(
+    (j) =>
+      j.kind === "trash" || j.kind === "delete" || j.kind === "restore",
+  );
 
   const settledUploads =
     uploadJobs.length > 0 &&
@@ -76,10 +91,22 @@ export function UploadProgressPanel() {
     };
   }, [jobs]);
 
-  // Auto-expand when new work starts
+  // Auto-expand only when work starts (0 → N). Respect minimize while busy.
+  const prevActiveCount = useRef(0);
+  const userMinimized = useRef(false);
   useEffect(() => {
-    if (active.length > 0) setTransferPanelOpen(true);
+    if (active.length === 0) {
+      userMinimized.current = false;
+    } else if (prevActiveCount.current === 0 && !userMinimized.current) {
+      setTransferPanelOpen(true);
+    }
+    prevActiveCount.current = active.length;
   }, [active.length, setTransferPanelOpen]);
+
+  function minimizePanel() {
+    userMinimized.current = true;
+    setTransferPanelOpen(false);
+  }
 
   if (jobs.length === 0) return null;
 
@@ -89,27 +116,68 @@ export function UploadProgressPanel() {
       const total = uploadJobs.length;
       return `Uploading ${finished + 1} of ${total}`;
     }
+    if (trashing.length > 0) {
+      const deleting = trashJobs.some((j) => j.kind === "delete");
+      const restoring = trashJobs.some((j) => j.kind === "restore");
+      const finished = done.filter(
+        (j) =>
+          j.kind === "trash" || j.kind === "delete" || j.kind === "restore",
+      ).length;
+      const total = trashJobs.length;
+      const verb = deleting
+        ? "Deleting"
+        : restoring
+          ? "Restoring"
+          : "Moving to trash";
+      return `${verb} ${Math.min(finished + 1, total)} of ${total}`;
+    }
     if (errored.length > 0 && active.length === 0) {
       return `${done.length} done · ${errored.length} failed`;
     }
     if (done.length > 0 && active.length === 0) {
-      return `${done.length} uploaded`;
+      const trashed = done.filter((j) => j.kind === "trash").length;
+      const deleted = done.filter((j) => j.kind === "delete").length;
+      const restored = done.filter((j) => j.kind === "restore").length;
+      const uploaded = done.filter((j) => j.kind === "upload").length;
+      if (trashed > 0 && uploaded === 0 && deleted === 0 && restored === 0) {
+        return trashed === 1 ? "Moved to trash" : `${trashed} moved to trash`;
+      }
+      if (deleted > 0 && uploaded === 0 && trashed === 0 && restored === 0) {
+        return deleted === 1 ? "Deleted" : `${deleted} deleted`;
+      }
+      if (restored > 0 && uploaded === 0 && trashed === 0 && deleted === 0) {
+        return restored === 1 ? "Restored" : `${restored} restored`;
+      }
+      if (uploaded > 0) return `${uploaded} uploaded`;
+      return `${done.length} done`;
     }
     return `${jobs.length} transfers`;
   })();
+
+  const dangerActive = trashing.some(
+    (j) => j.kind === "trash" || j.kind === "delete",
+  );
 
   if (!transferPanelOpen) {
     return (
       <div className="transfer-toast transfer-toast--min">
         <button
           type="button"
-          onClick={() => setTransferPanelOpen(true)}
+          onClick={() => {
+            userMinimized.current = false;
+            setTransferPanelOpen(true);
+          }}
           className="transfer-toast-min-btn"
         >
           {active.length > 0 ? (
-            <span className="transfer-spinner" aria-hidden />
+            <span
+              className={`transfer-spinner${dangerActive ? " is-danger" : ""}`}
+              aria-hidden
+            />
           ) : null}
-          <span>{summary}</span>
+          <span className={dangerActive ? "transfer-summary is-danger" : undefined}>
+            {summary}
+          </span>
           {uploadJobs.length > 0 && active.length > 0 ? (
             <span className="transfer-min-pct">{overallPct}%</span>
           ) : null}
@@ -124,7 +192,13 @@ export function UploadProgressPanel() {
         <div className="transfer-panel-head">
           <div className="transfer-panel-heading min-w-0">
             <p className="transfer-panel-title">Activity</p>
-            <p className="transfer-panel-summary">{summary}</p>
+            <p
+              className={`transfer-panel-summary${
+                dangerActive ? " is-danger" : ""
+              }`}
+            >
+              {summary}
+            </p>
           </div>
           <div className="transfer-panel-actions">
             {(done.length > 0 || errored.length > 0) && active.length === 0 ? (
@@ -139,7 +213,7 @@ export function UploadProgressPanel() {
             <button
               type="button"
               aria-label="Minimize"
-              onClick={() => setTransferPanelOpen(false)}
+              onClick={minimizePanel}
               className="flat-modal-close !w-7 !h-7"
             >
               <IconChevronDown size={16} />
@@ -162,58 +236,76 @@ export function UploadProgressPanel() {
         ) : null}
 
         <ul className="transfer-job-list">
-          {jobs.map((job) => (
-            <li key={job.id} className="transfer-job">
-              <div className="transfer-job-row">
-                <p
-                  className={`transfer-job-name${
-                    job.status === "error"
-                      ? " is-error"
-                      : job.status === "done"
-                        ? " is-done"
-                        : ""
-                  }`}
-                  title={job.name}
-                >
-                  {job.name}
-                </p>
-                <span
-                  className={`transfer-job-badge status-${job.status}`}
-                >
-                  {statusLabel(job)}
-                </span>
-                {job.status === "done" || job.status === "error" ? (
-                  <button
-                    type="button"
-                    className="flat-modal-close !w-6 !h-6"
-                    aria-label="Dismiss"
-                    onClick={() => removeJob(job.id)}
+          {jobs.map((job) => {
+            const isDangerKind =
+              job.kind === "trash" || job.kind === "delete";
+            const kindClass = isDangerKind
+              ? " kind-danger"
+              : job.kind === "restore"
+                ? " kind-restore"
+                : "";
+            return (
+              <li key={job.id} className="transfer-job">
+                <div className="transfer-job-row">
+                  <p
+                    className={`transfer-job-name${
+                      job.status === "error"
+                        ? " is-error"
+                        : job.status === "done"
+                          ? isDangerKind
+                            ? " is-error"
+                            : " is-done"
+                          : ""
+                    }`}
+                    title={job.name}
                   >
-                    <IconX size={14} />
-                  </button>
+                    {job.name}
+                  </p>
+                  <span
+                    className={`transfer-job-badge status-${job.status}${kindClass}`}
+                  >
+                    {statusLabel(job)}
+                  </span>
+                  {job.status === "done" || job.status === "error" ? (
+                    <button
+                      type="button"
+                      className="flat-modal-close !w-6 !h-6"
+                      aria-label="Dismiss"
+                      onClick={() => removeJob(job.id)}
+                    >
+                      <IconX size={14} />
+                    </button>
+                  ) : null}
+                </div>
+                {job.status === "uploading" ||
+                job.status === "downloading" ||
+                job.status === "saving" ? (
+                  <div className="transfer-progress-track">
+                    <div
+                      className={`transfer-progress-bar${
+                        isDangerKind ? " is-danger" : ""
+                      }`}
+                      style={{
+                        width: `${
+                          job.status === "saving" ? 100 : job.progress
+                        }%`,
+                      }}
+                    />
+                  </div>
                 ) : null}
-              </div>
-              {job.status === "uploading" ||
-              job.status === "downloading" ||
-              job.status === "saving" ? (
-                <div className="transfer-progress-track">
-                  <div
-                    className="transfer-progress-bar"
-                    style={{
-                      width: `${
-                        job.status === "saving" ? 100 : job.progress
-                      }%`,
-                    }}
-                  />
-                </div>
-              ) : null}
-              {job.status === "queued" ? (
-                <div className="transfer-progress-track">
-                  <div className="transfer-progress-bar is-queued" style={{ width: "4%" }} />
-                </div>
-              ) : null}
-            </li>
-          ))}
+                {job.status === "queued" ? (
+                  <div className="transfer-progress-track">
+                    <div
+                      className={`transfer-progress-bar is-queued${
+                        isDangerKind ? " is-danger" : ""
+                      }`}
+                      style={{ width: "4%" }}
+                    />
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
 
         {settledUploads && viewTarget ? (
@@ -229,7 +321,9 @@ export function UploadProgressPanel() {
           </div>
         ) : active.length > 0 ? (
           <p className="transfer-hint">
-            You can keep browsing — uploads continue in the background.
+            {trashing.length > 0
+              ? "You can keep browsing — this continues in the background."
+              : "You can keep browsing — uploads continue in the background."}
           </p>
         ) : null}
 
@@ -237,7 +331,7 @@ export function UploadProgressPanel() {
           <button
             type="button"
             className="transfer-expand-toggle sr-only"
-            onClick={() => setTransferPanelOpen(false)}
+            onClick={minimizePanel}
           >
             <IconChevronUp size={14} /> Minimize
           </button>

@@ -107,22 +107,22 @@ export function AdminTagsClient() {
   }
 
   return (
-    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
+    <div className="admin-panel">
       <AdminTabs />
       {error ? (
-        <p className="type-body text-[#ff3b30] px-2">{error}</p>
+        <p className="type-body text-[var(--danger)] px-2">{error}</p>
       ) : null}
 
-      <div className="flex flex-col gap-0.5">
+      <div className="admin-list">
         {tags.length === 0 ? (
-          <p className="px-2 py-6 type-body text-[var(--ink-soft)]">
+          <p className="admin-empty">
             No tags yet. Tags appear when people tag files on upload.
           </p>
         ) : (
           tags.map((t) => (
             <div
               key={t.id}
-              className="px-2 py-3 rounded-[12px] hover:bg-white/45 flex flex-wrap items-center gap-2"
+              className="admin-row"
             >
               <div className="min-w-0">
                 <p className="type-label truncate">
@@ -135,7 +135,7 @@ export function AdminTagsClient() {
               <div className="ml-auto flex flex-wrap gap-1">
                 <button
                   type="button"
-                  className="btn btn-ghost btn-xs"
+                  className="admin-ghost-btn"
                   onClick={() => {
                     setRenameTag(t);
                     setRenameValue(t.name);
@@ -146,7 +146,7 @@ export function AdminTagsClient() {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-xs"
+                  className="admin-ghost-btn"
                   onClick={() => {
                     setMergeTag(t);
                     setMergeIntoId("");
@@ -157,7 +157,7 @@ export function AdminTagsClient() {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-ghost btn-xs"
+                  className="admin-ghost-btn"
                   disabled={busy}
                   onClick={() => void deleteTag(t)}
                 >
@@ -178,7 +178,7 @@ export function AdminTagsClient() {
             <>
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="admin-ghost-btn"
                 onClick={() => setRenameTag(null)}
               >
                 Cancel
@@ -186,7 +186,7 @@ export function AdminTagsClient() {
               <button
                 type="submit"
                 form="rename-tag-form"
-                className="btn btn-primary"
+                className="btn-flat-primary px-4 h-9 text-[13px] font-semibold"
                 disabled={busy}
               >
                 Save
@@ -219,7 +219,7 @@ export function AdminTagsClient() {
             <>
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="admin-ghost-btn"
                 onClick={() => setMergeTag(null)}
               >
                 Cancel
@@ -227,7 +227,7 @@ export function AdminTagsClient() {
               <button
                 type="submit"
                 form="merge-tag-form"
-                className="btn btn-primary"
+                className="btn-flat-primary px-4 h-9 text-[13px] font-semibold"
                 disabled={busy || !mergeIntoId}
               >
                 Merge

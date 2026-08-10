@@ -2,20 +2,28 @@
 
 import {
   IconChevronDown,
+  IconChevronLeft,
   IconChevronRight,
   IconClock,
   IconHome,
+  IconKey,
+  IconLogout,
+  IconSettings,
   IconStar,
   IconTrash,
+  IconUser,
   IconX,
 } from "@tabler/icons-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { FolderTree } from "@/components/FolderTree";
+import { Menu } from "@/components/ui/Menu";
 import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
 import { prefetchFolderAssets } from "@/lib/folderAssetsCache";
-import type { Folder, Space } from "@/lib/types";
+import type { ServerStatus } from "@/lib/useFileServerHealth";
+import type { Folder, Profile, Space } from "@/lib/types";
 
 const ADMIN_LINKS = [
   { id: "spaces", label: "Spaces", href: "/admin/spaces" },
@@ -32,7 +40,40 @@ type AppSidebarProps = {
   open: boolean;
   onClose: () => void;
   mode?: "employee" | "admin";
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  profile: Profile;
+  serverStatus: ServerStatus;
+  onOpenSettings: () => void;
+  onSignOut: () => void;
 };
+
+function serverCopy(status: ServerStatus): {
+  label: string;
+  color: string;
+  title: string;
+} {
+  switch (status) {
+    case "connected":
+      return {
+        label: "Server online",
+        color: "var(--ok)",
+        title: "File server is online",
+      };
+    case "checking":
+      return {
+        label: "Checking server…",
+        color: "var(--ink-faint)",
+        title: "Checking file server…",
+      };
+    default:
+      return {
+        label: "Server offline",
+        color: "var(--danger)",
+        title: "File server unavailable — uploads and previews may fail",
+      };
+  }
+}
 
 export function AppSidebar({
   spaces,
@@ -40,11 +81,29 @@ export function AppSidebar({
   open,
   onClose,
   mode = "employee",
+  collapsed = false,
+  onToggleCollapsed,
+  profile,
+  serverStatus,
+  onOpenSettings,
+  onSignOut,
 }: AppSidebarProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const navigate = useViewTransitionNavigate();
   const { placeNav, libraryEpoch } = useDriveChrome();
+  const server = serverCopy(serverStatus);
+
+  const initials = useMemo(() => {
+    const name = profile.full_name || profile.email || "?";
+    return name
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() || "")
+      .join("");
+  }, [profile.full_name, profile.email]);
+
+  const displayName = profile.full_name?.trim() || profile.email || "Account";
 
   const view = searchParams.get("view") || "all";
   const onHome = pathname === "/";
@@ -55,7 +114,9 @@ export function AppSidebar({
   const [foldersBySpaceId, setFoldersBySpaceId] = useState<
     Record<string, Folder[]>
   >({});
-  const [expandedSlugs, setExpandedSlugs] = useState<Set<string>>(() => new Set());
+  const [expandedSlugs, setExpandedSlugs] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -89,7 +150,6 @@ export function AppSidebar({
     });
   }, [activeSlug]);
 
-  // Keep active place folders fresh from workspace
   useEffect(() => {
     if (!placeNav) return;
     const space = spaces.find((s) => s.slug === placeNav.spaceSlug);
@@ -135,27 +195,54 @@ export function AppSidebar({
         onClick={onClose}
       />
       <aside
-        className={`app-sidebar${open ? " is-open" : ""}`}
-        aria-label={mode === "admin" ? "Admin" : "Places"}
+        className={`app-sidebar${open ? " is-open" : ""}${
+          collapsed ? " is-collapsed" : ""
+        }`}
+        aria-label={mode === "admin" ? "Admin" : "Spaces"}
       >
-        <div className="app-sidebar-header">
-          <span className="app-sidebar-title">
-            {mode === "admin" ? "Admin" : "Navigate"}
-          </span>
-          <button
-            type="button"
-            className="app-sidebar-close"
-            aria-label="Close"
+        <div className="app-sidebar-brand">
+          <Link
+            href="/"
+            className="app-sidebar-logo"
             onClick={onClose}
+            title="Asset Hub"
           >
-            <IconX size={18} stroke={1.75} />
-          </button>
+            <span className="app-sidebar-logo-mark" aria-hidden />
+            <span className="app-sidebar-logo-text">Asset Hub</span>
+          </Link>
+          <div className="app-sidebar-brand-actions">
+            {onToggleCollapsed ? (
+              <button
+                type="button"
+                className="app-sidebar-collapse"
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={collapsed ? "Expand" : "Collapse"}
+                onClick={onToggleCollapsed}
+              >
+                {collapsed ? (
+                  <IconChevronRight size={16} stroke={1.75} />
+                ) : (
+                  <IconChevronLeft size={16} stroke={1.75} />
+                )}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="app-sidebar-close"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <IconX size={18} stroke={1.75} />
+            </button>
+          </div>
         </div>
 
         <nav className="app-sidebar-nav">
           {mode === "admin" ? (
             <div className="app-sidebar-section">
-              <div className="app-sidebar-label">Manage</div>
+              {!collapsed ? (
+                <div className="app-sidebar-label">Manage</div>
+              ) : null}
               {ADMIN_LINKS.map((t) => (
                 <button
                   key={t.id}
@@ -163,18 +250,20 @@ export function AppSidebar({
                   className={`app-sidebar-link${
                     pathname.startsWith(t.href) ? " active" : ""
                   }`}
+                  title={t.label}
                   onClick={() => go(t.href)}
                 >
-                  {t.label}
+                  <span className="app-sidebar-link-text">{t.label}</span>
                 </button>
               ))}
               <button
                 type="button"
                 className="app-sidebar-link"
+                title="Back to app"
                 onClick={() => go("/")}
               >
                 <IconHome size={16} stroke={1.75} />
-                Back to app
+                <span className="app-sidebar-link-text">Back to app</span>
               </button>
             </div>
           ) : (
@@ -183,43 +272,51 @@ export function AppSidebar({
                 <button
                   type="button"
                   className={`app-sidebar-link${onHome && view === "all" ? " active" : ""}`}
+                  title="Home"
                   onClick={() => go("/")}
                 >
                   <IconHome size={16} stroke={1.75} />
-                  Home
+                  <span className="app-sidebar-link-text">Home</span>
                 </button>
                 <button
                   type="button"
                   className={`app-sidebar-link${onHome && view === "recent" ? " active" : ""}`}
+                  title="Recents"
                   onClick={() => go("/?view=recent")}
                 >
                   <IconClock size={16} stroke={1.75} />
-                  Recents
+                  <span className="app-sidebar-link-text">Recents</span>
                 </button>
                 <button
                   type="button"
                   className={`app-sidebar-link${onHome && view === "favorites" ? " active" : ""}`}
+                  title="Favorites"
                   onClick={() => go("/?view=favorites")}
                 >
                   <IconStar size={16} stroke={1.75} />
-                  Favorites
+                  <span className="app-sidebar-link-text">Favorites</span>
                 </button>
                 {showTrash ? (
                   <button
                     type="button"
                     className={`app-sidebar-link${onHome && view === "trash" ? " active" : ""}`}
+                    title="Trash"
                     onClick={() => go("/?view=trash")}
                   >
                     <IconTrash size={16} stroke={1.75} />
-                    Trash
+                    <span className="app-sidebar-link-text">Trash</span>
                   </button>
                 ) : null}
               </div>
 
               <div className="app-sidebar-section">
-                <div className="app-sidebar-label">Places</div>
+                {!collapsed ? (
+                  <div className="app-sidebar-label">Spaces</div>
+                ) : null}
                 {spaces.length === 0 ? (
-                  <p className="app-sidebar-empty">No places yet</p>
+                  !collapsed ? (
+                    <p className="app-sidebar-empty">No spaces yet</p>
+                  ) : null
                 ) : (
                   <ul className="app-sidebar-places">
                     {spaces.map((s) => {
@@ -232,7 +329,8 @@ export function AppSidebar({
                         (rootFolderCount.get(s.id) ?? 0) > 0 ||
                         folders.some((f) => f.parent_folder_id == null);
                       const isExpanded = expandedSlugs.has(s.slug);
-                      const showTree = isExpanded && hasFolders;
+                      const showTree =
+                        !collapsed && isExpanded && hasFolders;
 
                       return (
                         <li
@@ -240,7 +338,7 @@ export function AppSidebar({
                           className={`app-sidebar-place-block${active ? " is-active" : ""}`}
                         >
                           <div className="app-sidebar-place-row">
-                            {hasFolders ? (
+                            {!collapsed && hasFolders ? (
                               <button
                                 type="button"
                                 className="app-sidebar-place-chevron"
@@ -258,14 +356,19 @@ export function AppSidebar({
                                   <IconChevronRight size={14} stroke={1.75} />
                                 )}
                               </button>
-                            ) : (
+                            ) : !collapsed ? (
                               <span className="app-sidebar-place-chevron is-empty" />
-                            )}
+                            ) : null}
                             <button
                               type="button"
                               className={`app-sidebar-place${active ? " active" : ""}`}
+                              title={s.name}
                               onClick={() => {
-                                if (!isExpanded && hasFolders) {
+                                if (
+                                  !collapsed &&
+                                  !isExpanded &&
+                                  hasFolders
+                                ) {
                                   toggleExpanded(s.slug);
                                 }
                                 if (active && placeNav?.currentFolderId) {
@@ -281,7 +384,9 @@ export function AppSidebar({
                                 style={{ backgroundColor: s.color }}
                                 aria-hidden
                               />
-                              <span className="truncate">{s.name}</span>
+                              <span className="app-sidebar-link-text truncate">
+                                {s.name}
+                              </span>
                             </button>
                           </div>
                           {showTree ? (
@@ -327,6 +432,77 @@ export function AppSidebar({
             </>
           )}
         </nav>
+
+        <div className="app-sidebar-footer">
+          <div className="app-sidebar-server" title={server.title}>
+            <span
+              className="app-sidebar-server-dot"
+              style={{ backgroundColor: server.color }}
+              aria-hidden
+            />
+            <span className="app-sidebar-server-label">{server.label}</span>
+          </div>
+
+          <div className="app-sidebar-account">
+            <Menu
+              align="left"
+              side="top"
+              widthClass="w-[200px]"
+              className="app-sidebar-account-menu"
+              trigger={
+                <span
+                  className="app-sidebar-account-trigger"
+                  title={displayName}
+                >
+                  <span className="app-sidebar-avatar" aria-hidden>
+                    {initials || <IconUser size={14} />}
+                  </span>
+                  <span className="app-sidebar-account-meta">
+                    <span className="app-sidebar-account-name truncate">
+                      {displayName}
+                    </span>
+                    {profile.email && profile.full_name?.trim() ? (
+                      <span className="app-sidebar-account-email truncate">
+                        {profile.email}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
+              }
+            >
+              {profile.is_admin ? (
+                <Link
+                  href="/admin/spaces"
+                  className="menu-row"
+                  onClick={onClose}
+                >
+                  <IconSettings size={15} /> Admin
+                </Link>
+              ) : null}
+              <button
+                type="button"
+                className="menu-row"
+                onClick={() => {
+                  onClose();
+                  onOpenSettings();
+                }}
+              >
+                <IconKey size={15} /> Settings
+              </button>
+              <div className="card-divider" />
+              <button
+                type="button"
+                className="menu-row menu-row-danger"
+                onClick={() => {
+                  onClose();
+                  onSignOut();
+                }}
+              >
+                <IconLogout size={15} /> Sign out
+              </button>
+            </Menu>
+          </div>
+        </div>
       </aside>
     </>
   );

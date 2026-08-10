@@ -12,6 +12,8 @@ type MenuProps = {
   trigger: ReactNode;
   children: ReactNode;
   align?: "left" | "right";
+  /** Open above the trigger (e.g. sidebar footer) */
+  side?: "bottom" | "top";
   widthClass?: string;
   className?: string;
 };
@@ -20,6 +22,7 @@ export function Menu({
   trigger,
   children,
   align = "right",
+  side = "bottom",
   widthClass = "w-[240px]",
   className = "",
 }: MenuProps) {
@@ -74,9 +77,11 @@ export function Menu({
         <div
           id={menuId}
           role="menu"
-          className={`absolute top-full mt-1 z-50 surface p-1 max-h-[min(70vh,420px)] overflow-y-auto ${
-            closing ? "flat-dismiss" : "flat-sheet"
-          } ${widthClass} ${align === "right" ? "right-0" : "left-0"}`}
+          className={`absolute z-50 surface p-1 max-h-[min(70vh,420px)] overflow-y-auto ${
+            side === "top" ? "bottom-full mb-1" : "top-full mt-1"
+          } ${closing ? "flat-dismiss" : "flat-sheet"} ${widthClass} ${
+            align === "right" ? "right-0" : "left-0"
+          }`}
         >
           <div onClick={() => close()}>{children}</div>
         </div>

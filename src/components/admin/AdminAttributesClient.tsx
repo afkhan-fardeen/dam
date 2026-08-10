@@ -91,24 +91,24 @@ export function AdminAttributesClient() {
   }
 
   return (
-    <div className="glass-content p-5 sm:p-6 flex flex-col gap-4">
+    <div className="admin-panel">
       <AdminTabs />
 
       <div className="flex justify-end px-2">
         <button
           type="button"
-          className="btn-glass-primary px-4 py-2 text-[13px] font-medium"
+          className="btn-flat-primary px-4 h-9 text-[13px] font-semibold"
           onClick={() => setShowCreate(true)}
         >
           New attribute
         </button>
       </div>
 
-      {error ? <p className="type-body text-[#ff3b30] px-2">{error}</p> : null}
+      {error ? <p className="type-body text-[var(--danger)] px-2">{error}</p> : null}
 
-      <div className="flex flex-col gap-0.5">
+      <div className="admin-list">
         {defs.length === 0 ? (
-          <p className="px-2 py-6 type-body text-[var(--ink-soft)] max-w-xl">
+          <p className="admin-empty max-w-xl">
             Attribute definitions describe typed fields on documents — invoice
             numbers, AWB codes, scheduled dates. Create one to make it available
             in every file&apos;s Attributes panel.
@@ -117,7 +117,7 @@ export function AdminAttributesClient() {
           defs.map((d) => (
             <div
               key={d.id}
-              className="px-2 py-3 hover:bg-white/45 flex flex-wrap items-center gap-2"
+              className="admin-row"
             >
               <div className="min-w-0 flex-1">
                 <p className="type-label truncate">{d.label}</p>
@@ -132,7 +132,7 @@ export function AdminAttributesClient() {
               {d.status === "active" ? (
                 <button
                   type="button"
-                  className="btn btn-ghost btn-xs ml-auto"
+                  className="admin-ghost-btn"
                   disabled={busy}
                   onClick={() => setArchiveTarget(d)}
                 >
@@ -152,7 +152,7 @@ export function AdminAttributesClient() {
             <>
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="admin-ghost-btn"
                 onClick={() => setShowCreate(false)}
               >
                 Cancel
@@ -160,7 +160,7 @@ export function AdminAttributesClient() {
               <button
                 type="submit"
                 form="create-attr-form"
-                className="btn btn-primary"
+                className="btn-flat-primary px-4 h-9 text-[13px] font-semibold"
                 disabled={busy}
               >
                 Create
