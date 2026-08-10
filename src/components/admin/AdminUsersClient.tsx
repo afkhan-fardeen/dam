@@ -44,7 +44,6 @@ export function AdminUsersClient() {
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isActive, setIsActive] = useState(true);
   const [rows, setRows] = useState<PendingRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [createdCreds, setCreatedCreds] = useState<{
@@ -60,11 +59,13 @@ export function AdminUsersClient() {
     ]);
     const usersJson = await usersRes.json();
     const spacesJson = await spacesRes.json();
-    if (usersRes.ok) {
-      setUsers(usersJson.users as Profile[]);
-      setMemberships(usersJson.memberships as SpaceMembership[]);
-      setMeId((usersJson.me as string | null) ?? null);
+    if (!usersRes.ok) {
+      setError(usersJson.error || "Could not load people.");
+      return;
     }
+    setUsers(usersJson.users as Profile[]);
+    setMemberships(usersJson.memberships as SpaceMembership[]);
+    setMeId((usersJson.me as string | null) ?? null);
     if (spacesRes.ok) setSpaces(spacesJson.spaces as Space[]);
   }, []);
 
@@ -74,6 +75,7 @@ export function AdminUsersClient() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // List everyone normally (no greyed-out / inactive styling).
     if (!q) return users;
     return users.filter(
       (u) =>
@@ -98,7 +100,6 @@ export function AdminUsersClient() {
     setFullName("");
     setPassword(generatePassword());
     setIsAdmin(false);
-    setIsActive(true);
     setError(null);
     setCreatedCreds(null);
     const first = spaces[0];
@@ -116,7 +117,6 @@ export function AdminUsersClient() {
     setFullName(user.full_name || "");
     setPassword("");
     setIsAdmin(Boolean(user.is_admin));
-    setIsActive(user.is_active !== false);
     setError(null);
     setCreatedCreds(null);
     setRows(membershipRowsFor(user.id));
@@ -142,13 +142,13 @@ export function AdminUsersClient() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email,
+        email: email.trim().toLowerCase(),
         full_name: fullName,
         password,
         memberships: rows.map(({ space_id, role }) => ({ space_id, role })),
       }),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
       setError(json.error || "Could not create this person.");
@@ -176,14 +176,13 @@ export function AdminUsersClient() {
       body: JSON.stringify({
         user_id: editing.id,
         full_name: fullName,
-        email,
+        email: email.trim().toLowerCase(),
         is_admin: isAdmin,
-        is_active: isActive,
         memberships: rows.map(({ space_id, role }) => ({ space_id, role })),
         remove_space_ids,
       }),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
       setError(json.error || "Could not save changes.");
@@ -207,7 +206,7 @@ export function AdminUsersClient() {
         password: resetPassword,
       }),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
       setError(json.error || "Could not reset password.");
@@ -276,25 +275,24 @@ export function AdminUsersClient() {
       ) : null}
 
       <div className="admin-list">
+        {filtered.length === 0 ? (
+          <p className="type-caption text-[var(--ink-soft)] px-2 py-4">
+            No people yet. Create someone to get started.
+          </p>
+        ) : null}
         {filtered.map((u) => {
           const userMemberships = memberships.filter((m) => m.user_id === u.id);
-          const inactive = u.is_active === false;
           const self = meId === u.id;
           return (
             <div
               key={u.id}
-              className={`px-2 py-3 hover:bg-[var(--surface-2)] flex flex-col gap-2 ${
-                inactive ? "opacity-45" : ""
-              }`}
+              className="px-2 py-3 hover:bg-[var(--surface-2)] flex flex-col gap-2"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <p className="type-label">{u.full_name || "Unnamed"}</p>
                 <p className="type-caption text-[var(--ink-soft)]">{u.email}</p>
                 {u.is_admin ? (
                   <span className="badge badge-neutral badge-sm">Admin</span>
-                ) : null}
-                {inactive ? (
-                  <span className="badge badge-ghost badge-sm">Inactive</span>
                 ) : null}
                 {self ? (
                   <span className="badge badge-ghost badge-sm">You</span>
@@ -422,7 +420,7 @@ export function AdminUsersClient() {
                   variant="primary"
                   type="submit"
                   form={editing ? "edit-user-form" : "create-user-form"}
-                  disabled={busy}
+                  disabled={busy || (!editing && password.length < 8)}
                 >
                   {busy
                     ? editing
@@ -469,10 +467,12 @@ export function AdminUsersClient() {
                 </legend>
                 <input
                   type="email"
+                  name="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="input input-bordered w-full"
+                  autoComplete="off"
                 />
               </fieldset>
 
@@ -491,6 +491,7 @@ export function AdminUsersClient() {
                     </button>
                   </div>
                   <PasswordField
+                    name="password"
                     value={password}
                     onChange={setPassword}
                     required
@@ -510,19 +511,9 @@ export function AdminUsersClient() {
                       onChange={(e) => setIsAdmin(e.target.checked)}
                     />
                   </label>
-                  <label className="flex items-center justify-between gap-3 cursor-pointer">
-                    <span className="type-body">Active</span>
-                    <input
-                      type="checkbox"
-                      className="toggle toggle-sm"
-                      checked={isActive}
-                      disabled={isSelf}
-                      onChange={(e) => setIsActive(e.target.checked)}
-                    />
-                  </label>
                   {isSelf ? (
                     <p className="type-caption text-[var(--ink-soft)]">
-                      You can’t change your own admin/active status here.
+                      You can’t change your own admin status here.
                     </p>
                   ) : null}
                 </div>
@@ -601,7 +592,11 @@ export function AdminUsersClient() {
                   >
                     + Add space
                   </button>
-                ) : null}
+                ) : (
+                  <p className="type-caption text-[var(--ink-soft)]">
+                    Create a space first, then assign access here.
+                  </p>
+                )}
               </div>
               {error ? (
                 <p className="type-caption text-[var(--danger)]">{error}</p>
@@ -673,6 +668,7 @@ export function AdminUsersClient() {
                   </button>
                 </div>
                 <PasswordField
+                  name="password"
                   value={resetPassword}
                   onChange={setResetPassword}
                   minLength={8}
@@ -698,7 +694,9 @@ export function AdminUsersClient() {
           danger
           busy={busy}
           onConfirm={() => void confirmDelete()}
-          onClose={() => setDeleteTarget(null)}
+          onClose={() => {
+            if (!busy) setDeleteTarget(null);
+          }}
         />
       ) : null}
     </div>

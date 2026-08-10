@@ -18,12 +18,73 @@ type InviteBody = {
   memberships?: MembershipInput[];
 };
 
-async function countActiveAdmins(supabase: SupabaseClient) {
+async function countAdmins(supabase: SupabaseClient) {
   const { data } = await supabase
     .from("profiles")
-    .select("id,is_active")
+    .select("id")
     .eq("is_admin", true);
-  return (data ?? []).filter((p) => p.is_active !== false).length;
+  return (data ?? []).length;
+}
+
+/** Clear non-cascading FKs so auth/profile delete can succeed. */
+async function detachUserReferences(
+  admin: SupabaseClient,
+  userId: string,
+) {
+  const ops = [
+    () => admin.from("space_memberships").delete().eq("user_id", userId),
+    () => admin.from("asset_favorites").delete().eq("user_id", userId),
+    () => admin.from("folder_unlocks").delete().eq("user_id", userId),
+    () => admin.from("space_unlocks").delete().eq("user_id", userId),
+    () =>
+      admin.from("assets").update({ uploaded_by: null }).eq("uploaded_by", userId),
+    () =>
+      admin.from("folders").update({ created_by: null }).eq("created_by", userId),
+    () =>
+      admin.from("spaces").update({ created_by: null }).eq("created_by", userId),
+    () =>
+      admin.from("entities").update({ created_by: null }).eq("created_by", userId),
+    () =>
+      admin
+        .from("asset_entities")
+        .update({ created_by: null })
+        .eq("created_by", userId),
+    () =>
+      admin
+        .from("share_links")
+        .update({ created_by: null })
+        .eq("created_by", userId),
+    () =>
+      admin.from("activity_log").update({ user_id: null }).eq("user_id", userId),
+  ];
+  for (const op of ops) {
+    const { error } = await op();
+    // Ignore missing-table / missing-column noise; hard blockers surface on profile delete.
+    if (error && !/does not exist|schema cache/i.test(error.message)) {
+      // keep going — profile delete will fail loudly if something still blocks
+    }
+  }
+}
+
+async function upsertMemberships(
+  admin: SupabaseClient,
+  userId: string,
+  memberships: MembershipInput[],
+) {
+  for (const m of memberships) {
+    if (!m.space_id || !["viewer", "downloader", "editor"].includes(m.role)) {
+      continue;
+    }
+    const { error } = await admin.from("space_memberships").upsert(
+      {
+        space_id: m.space_id,
+        user_id: userId,
+        role: m.role,
+      },
+      { onConflict: "space_id,user_id" },
+    );
+    if (error) throw error;
+  }
 }
 
 export async function GET(request: Request) {
@@ -75,6 +136,22 @@ export async function POST(request: Request) {
   }
 
   const admin = getSupabaseAdmin();
+
+  // If email already exists, block with a clear message (don't soft-create ghosts).
+  const { data: listed } = await admin.auth.admin.listUsers({ perPage: 200 });
+  const existing = listed?.users?.find(
+    (u) => u.email?.toLowerCase() === email,
+  );
+  if (existing) {
+    return NextResponse.json(
+      {
+        error:
+          "A person with this email already exists. Edit them, or delete them permanently first.",
+      },
+      { status: 400 },
+    );
+  }
+
   const { data: created, error: createError } =
     await admin.auth.admin.createUser({
       email,
@@ -92,25 +169,24 @@ export async function POST(request: Request) {
 
   const newUserId = created.user.id;
 
-  await admin.from("profiles").upsert({
+  const { error: profileError } = await admin.from("profiles").upsert({
     id: newUserId,
     email,
     full_name: fullName,
     is_admin: false,
+    is_active: true,
   });
+  if (profileError) {
+    await admin.auth.admin.deleteUser(newUserId).catch(() => null);
+    return NextResponse.json({ error: profileError.message }, { status: 400 });
+  }
 
-  for (const m of memberships) {
-    if (!m.space_id || !["viewer", "downloader", "editor"].includes(m.role)) {
-      continue;
-    }
-    await supabase.from("space_memberships").upsert(
-      {
-        space_id: m.space_id,
-        user_id: newUserId,
-        role: m.role,
-      },
-      { onConflict: "space_id,user_id" },
-    );
+  try {
+    await upsertMemberships(admin, newUserId, memberships);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Could not set space access";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   await logActivity(
@@ -142,7 +218,6 @@ export async function PATCH(request: Request) {
     email?: string;
     memberships?: MembershipInput[];
     is_admin?: boolean;
-    is_active?: boolean;
     password?: string;
     remove_space_ids?: string[];
   };
@@ -151,7 +226,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Missing user id" }, { status: 400 });
   }
 
-  const { data: target } = await supabase
+  const admin = getSupabaseAdmin();
+  const { data: target } = await admin
     .from("profiles")
     .select("id,email,full_name,is_admin,is_active")
     .eq("id", body.user_id)
@@ -161,13 +237,12 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const admin = getSupabaseAdmin();
   const profilePatch: {
     full_name?: string;
     email?: string;
     is_admin?: boolean;
     is_active?: boolean;
-  } = {};
+  } = { is_active: true };
 
   if (typeof body.full_name === "string") {
     profilePatch.full_name = body.full_name.trim();
@@ -223,10 +298,10 @@ export async function PATCH(request: Request) {
           { status: 400 },
         );
       }
-      const admins = await countActiveAdmins(supabase);
+      const admins = await countAdmins(admin);
       if (admins <= 1) {
         return NextResponse.json(
-          { error: "Keep at least one active admin." },
+          { error: "Keep at least one admin." },
           { status: 400 },
         );
       }
@@ -234,67 +309,45 @@ export async function PATCH(request: Request) {
     profilePatch.is_admin = body.is_admin;
   }
 
-  if (typeof body.is_active === "boolean") {
-    if (body.is_active === false) {
-      if (body.user_id === user.id) {
-        return NextResponse.json(
-          { error: "You can’t deactivate your own account." },
-          { status: 400 },
-        );
-      }
-      if (target.is_admin) {
-        const admins = await countActiveAdmins(supabase);
-        if (admins <= 1) {
-          return NextResponse.json(
-            { error: "Keep at least one active admin." },
-            { status: 400 },
-          );
-        }
-      }
-    }
-    profilePatch.is_active = body.is_active;
+  const { error: profileError } = await admin
+    .from("profiles")
+    .update(profilePatch)
+    .eq("id", body.user_id);
+  if (profileError) {
+    return NextResponse.json({ error: profileError.message }, { status: 400 });
   }
 
-  if (Object.keys(profilePatch).length > 0) {
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .update(profilePatch)
-      .eq("id", body.user_id);
-    if (profileError) {
-      return NextResponse.json({ error: profileError.message }, { status: 400 });
-    }
-    await logActivity(
-      {
-        user_id: user.id,
-        action: "update_user",
-        target_type: "user",
-        target_id: body.user_id,
-        details: profilePatch,
-      },
-      supabase,
-    );
-  }
+  await logActivity(
+    {
+      user_id: user.id,
+      action: "update_user",
+      target_type: "user",
+      target_id: body.user_id,
+      details: profilePatch,
+    },
+    supabase,
+  );
 
   if (body.remove_space_ids?.length) {
-    await supabase
+    await admin
       .from("space_memberships")
       .delete()
       .eq("user_id", body.user_id)
       .in("space_id", body.remove_space_ids);
   }
 
+  try {
+    await upsertMemberships(admin, body.user_id, body.memberships ?? []);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Could not update space access";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
   for (const m of body.memberships ?? []) {
     if (!m.space_id || !["viewer", "downloader", "editor"].includes(m.role)) {
       continue;
     }
-    await supabase.from("space_memberships").upsert(
-      {
-        space_id: m.space_id,
-        user_id: body.user_id,
-        role: m.role,
-      },
-      { onConflict: "space_id,user_id" },
-    );
     await logActivity(
       {
         user_id: user.id,
@@ -334,30 +387,56 @@ export async function DELETE(request: Request) {
     );
   }
 
-  const { data: target } = await supabase
+  const admin = getSupabaseAdmin();
+  const { data: target } = await admin
     .from("profiles")
     .select("id,email,full_name,is_admin,is_active")
     .eq("id", userId)
     .maybeSingle();
 
   if (!target) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    // Profile already gone — still try auth delete
+    const { error: orphanAuthError } =
+      await admin.auth.admin.deleteUser(userId);
+    if (orphanAuthError) {
+      return NextResponse.json(
+        { error: orphanAuthError.message },
+        { status: 400 },
+      );
+    }
+    return NextResponse.json({ ok: true });
   }
 
-  if (target.is_admin && target.is_active !== false) {
-    const admins = await countActiveAdmins(supabase);
+  if (target.is_admin) {
+    const admins = await countAdmins(admin);
     if (admins <= 1) {
       return NextResponse.json(
-        { error: "Keep at least one active admin." },
+        { error: "Keep at least one admin." },
         { status: 400 },
       );
     }
   }
 
-  // Clear memberships first (belt-and-suspenders; auth delete cascades profile)
-  await supabase.from("space_memberships").delete().eq("user_id", userId);
+  try {
+    await detachUserReferences(admin, userId);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Could not detach user data";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 
-  const admin = getSupabaseAdmin();
+  // Remove profile row explicitly (auth delete also cascades, but FKs block first)
+  const { error: profileDeleteError } = await admin
+    .from("profiles")
+    .delete()
+    .eq("id", userId);
+  if (profileDeleteError) {
+    return NextResponse.json(
+      { error: profileDeleteError.message },
+      { status: 400 },
+    );
+  }
+
   const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
   if (deleteError) {
     return NextResponse.json({ error: deleteError.message }, { status: 400 });
