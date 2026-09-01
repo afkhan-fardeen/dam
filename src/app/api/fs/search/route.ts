@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser, roleForSpace } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import {
   FS_NODE_COLS,
   attachFsFavorites,
@@ -18,7 +18,6 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").trim();
-  const spaceId = url.searchParams.get("space_id");
   if (!q) {
     return NextResponse.json({ nodes: [], count: 0 });
   }
@@ -32,35 +31,19 @@ export async function GET(request: Request) {
     )
     .limit(40);
 
-  if (spaceId) {
-    const { data: memberships } = await supabase
-      .from("space_memberships")
-      .select("id,space_id,user_id,role,created_at")
-      .eq("user_id", effectiveUserId);
-    const role = roleForSpace(memberships ?? [], spaceId, profile.is_admin);
-    if (!role && !profile.is_admin) {
-      return NextResponse.json({ error: "No access" }, { status: 403 });
-    }
-    query = query.eq("space_id", spaceId);
-  }
-
   const { data, error } = await query;
   if (error) {
-    // Fallback RPC if available
-    if (spaceId) {
-      const { data: rpcData, error: rpcErr } = await supabase.rpc(
-        "search_fs_nodes_trgm",
-        { q, p_space_id: spaceId },
-      );
-      if (rpcErr) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
-      }
-      let nodes = (rpcData ?? []) as FsNode[];
-      nodes = await attachFsNodeTags(supabase, nodes);
-      nodes = await attachFsFavorites(supabase, effectiveUserId, nodes);
-      return NextResponse.json({ nodes, count: nodes.length });
+    const { data: rpcData, error: rpcErr } = await supabase.rpc(
+      "search_fs_nodes_trgm",
+      { q },
+    );
+    if (rpcErr) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    let nodes = (rpcData ?? []) as FsNode[];
+    nodes = await attachFsNodeTags(supabase, nodes);
+    nodes = await attachFsFavorites(supabase, effectiveUserId, nodes);
+    return NextResponse.json({ nodes, count: nodes.length });
   }
 
   let nodes = (data ?? []) as FsNode[];

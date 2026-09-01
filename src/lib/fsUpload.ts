@@ -2,7 +2,6 @@
 
 export type FsUploadOptions = {
   file: File;
-  spaceId: string;
   parentId: string | null;
   tags?: string[];
   description?: string | null;
@@ -17,7 +16,6 @@ export async function uploadFsFileWithProgress(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      space_id: options.spaceId,
       parent_id: options.parentId,
       name: options.file.name,
       size: options.file.size,
@@ -58,16 +56,13 @@ export async function uploadFsFileWithProgress(
       throw new Error(json.error || "Chunk upload failed");
     }
     offset = Number(json.offset ?? end);
-    options.onProgress?.(
-      Math.min(99, (offset / options.file.size) * 100),
-    );
+    options.onProgress?.(Math.min(99, (offset / options.file.size) * 100));
   }
 
   const completeRes = await fetch("/api/fs/upload", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      space_id: options.spaceId,
       parent_id: options.parentId,
       session_id: sessionId,
       name: options.file.name,

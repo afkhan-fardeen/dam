@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { requireUser, roleForSpace, logActivity } from "@/lib/auth";
-import { canDownload, canEdit } from "@/lib/types";
+import { requireUser, logActivity } from "@/lib/auth";
 import {
   FS_NODE_COLS,
   attachFsFavorites,
   attachFsNodeTags,
   basenamePath,
+  grantCreatorEdit,
   joinRelative,
   parentRelativePath,
+  rpcCanEditNode,
   setFsNodeTags,
 } from "@/lib/fsNodes";
 import {
@@ -41,7 +42,9 @@ export async function GET(request: Request, context: RouteContext) {
   }
   let [node] = await attachFsNodeTags(supabase, [data as FsNode]);
   [node] = await attachFsFavorites(supabase, effectiveUserId, [node]);
-  return NextResponse.json({ node });
+  const canEdit =
+    profile.is_admin || (await rpcCanEditNode(supabase, id).catch(() => false));
+  return NextResponse.json({ node: { ...node, can_edit: canEdit } });
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -70,16 +73,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { data: memberships } = await supabase
-    .from("space_memberships")
-    .select("id,space_id,user_id,role,created_at")
-    .eq("user_id", effectiveUserId);
-  const role = roleForSpace(
-    memberships ?? [],
-    node.space_id,
-    profile.is_admin,
-  );
-  if (!canEdit(role, profile.is_admin)) {
+  const canEdit =
+    profile.is_admin || (await rpcCanEditNode(supabase, id).catch(() => false));
+  if (!canEdit) {
     return NextResponse.json({ error: "Editors only" }, { status: 403 });
   }
 
@@ -96,7 +92,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       await logActivity(
         {
           user_id: user.id,
-          space_id: node.space_id,
           action: "restore",
           target_type: "fs_node",
           target_id: id,
@@ -108,29 +103,31 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     if (typeof body.copy_to_parent_id !== "undefined") {
       let toDir = "";
+      let destParentId: string | null = null;
       if (body.copy_to_parent_id) {
         const { data: dest } = await supabase
           .from("fs_nodes")
-          .select("relative_path")
+          .select("id,relative_path")
           .eq("id", body.copy_to_parent_id)
           .single();
         toDir = dest?.relative_path || "";
-      } else {
-        toDir = node.relative_path.split("/")[0] || "";
+        destParentId = dest?.id ?? null;
       }
       const result = await fsCopy(node.relative_path, toDir);
       const newPath = result.relative_path;
-      const { data: parent } = await supabase
-        .from("fs_nodes")
-        .select("id")
-        .eq("space_id", node.space_id)
-        .eq("relative_path", parentRelativePath(newPath) || "")
-        .maybeSingle();
+      const parentPath = parentRelativePath(newPath);
+      if (parentPath && !destParentId) {
+        const { data: parent } = await supabase
+          .from("fs_nodes")
+          .select("id")
+          .eq("relative_path", parentPath)
+          .maybeSingle();
+        destParentId = parent?.id ?? null;
+      }
       const { data: copied, error: cErr } = await supabase
         .from("fs_nodes")
         .insert({
-          space_id: node.space_id,
-          parent_id: parent?.id ?? null,
+          parent_id: destParentId,
           node_type: node.node_type,
           name: basenamePath(newPath),
           relative_path: newPath,
@@ -143,6 +140,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         .select(FS_NODE_COLS)
         .single();
       if (cErr) throw cErr;
+      if (copied.node_type === "folder") {
+        await grantCreatorEdit(supabase, copied.id, effectiveUserId);
+      }
       return NextResponse.json({ node: copied }, { status: 201 });
     }
 
@@ -168,22 +168,33 @@ export async function PATCH(request: Request, context: RouteContext) {
           .eq("id", body.parent_id)
           .single();
         if (!dest) {
-          return NextResponse.json({ error: "Destination not found" }, { status: 404 });
+          return NextResponse.json(
+            { error: "Destination not found" },
+            { status: 404 },
+          );
         }
         toDir = dest.relative_path;
         parentId = dest.id;
       } else {
-        toDir = relativePath.split("/")[0] || "";
-        const { data: root } = await supabase
-          .from("fs_nodes")
-          .select("id")
-          .eq("space_id", node.space_id)
-          .eq("relative_path", toDir)
-          .maybeSingle();
-        parentId = root?.id ?? null;
+        toDir = "";
+        parentId = null;
       }
-      const result = await fsMove(relativePath, toDir);
+      const result = await fsMove(
+        relativePath,
+        toDir || ".",
+      );
+      // When moving to root, Windows may expect empty or special path —
+      // fsMove with empty string: check client. Prefer joinRelative.
       relativePath = result.relative_path;
+      if (!body.parent_id) {
+        // Recompute for root move
+        const targetName = basenamePath(node.relative_path);
+        const moveResult = result.relative_path.includes("/")
+          ? result
+          : { relative_path: targetName };
+        relativePath = moveResult.relative_path;
+        parentId = null;
+      }
       name = basenamePath(relativePath);
     }
 
@@ -240,16 +251,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { data: memberships } = await supabase
-    .from("space_memberships")
-    .select("id,space_id,user_id,role,created_at")
-    .eq("user_id", effectiveUserId);
-  const role = roleForSpace(
-    memberships ?? [],
-    node.space_id,
-    profile.is_admin,
-  );
-  if (!canEdit(role, profile.is_admin)) {
+  const canEdit =
+    profile.is_admin || (await rpcCanEditNode(supabase, id).catch(() => false));
+  if (!canEdit) {
     return NextResponse.json({ error: "Editors only" }, { status: 403 });
   }
 
@@ -276,7 +280,6 @@ export async function DELETE(request: Request, context: RouteContext) {
     await logActivity(
       {
         user_id: user.id,
-        space_id: node.space_id,
         action: permanent ? "permanent_delete" : "trash",
         target_type: "fs_node",
         target_id: id,
@@ -293,6 +296,4 @@ export async function DELETE(request: Request, context: RouteContext) {
   }
 }
 
-// keep download capability check available for media route
-void canDownload;
 void joinRelative;

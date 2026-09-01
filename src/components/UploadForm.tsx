@@ -114,7 +114,7 @@ export function UploadForm({
     void (async () => {
       try {
         const res = await fetch(
-          `/api/fs/list?space_id=${encodeURIComponent(destSpaceId)}&folders=1`,
+          `/api/fs/list?folders=1`,
         );
         const json = await res.json();
         if (!cancelled && res.ok) {
@@ -242,7 +242,6 @@ export function UploadForm({
     enqueueUploads(
       queue.map((item) => ({
         file: item.file,
-        spaceId: destSpaceId,
         folderId: destFolderId,
         tags: tagList,
         description: description || null,

@@ -33,7 +33,6 @@ export type UploadJob = TransferJob;
 
 export type UploadEnqueueItem = {
   file: File;
-  spaceId: string;
   folderId: string | null;
   tags?: string[];
   description?: string | null;
@@ -44,11 +43,8 @@ export type UploadEnqueueItem = {
   viewLabel?: string;
 };
 
-/** Registered by SpaceWorkspace so the global sidebar can show the folder tree */
+/** Registered by DriveWorkspace so the global sidebar can show the folder tree */
 export type PlaceNavState = {
-  spaceSlug: string;
-  spaceName: string;
-  spaceId: string;
   folders: Folder[];
   currentFolderId: string | null;
   onNavigateFolder: (folderId: string | null) => void;
@@ -163,7 +159,6 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       const {
         jobId,
         file,
-        spaceId,
         folderId,
         tags,
         description,
@@ -186,7 +181,6 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       try {
         await uploadFsFileWithProgress({
           file,
-          spaceId,
           parentId: folderId,
           tags,
           description,
@@ -203,7 +197,6 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
             }),
         });
 
-        // Entity linking stays on legacy assets until entity FKs move to fs_nodes.
         void entityIds;
 
         upsertJob({

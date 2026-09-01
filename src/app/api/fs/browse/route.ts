@@ -9,7 +9,7 @@ import type { FsNode } from "@/lib/types";
 
 export const runtime = "nodejs";
 
-/** Cross-space browse: recent / trash / starred / all files from fs_nodes. */
+/** Cross-tree browse: recent / trash / starred / all files. */
 export async function GET(request: Request) {
   const { user, profile, effectiveUserId, supabase } =
     await requireUser(request);
@@ -19,36 +19,10 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const view = url.searchParams.get("view") || "all";
-  const spaceId = url.searchParams.get("space_id");
   const limit = Math.min(
     100,
     Math.max(1, Number(url.searchParams.get("limit") || "48") || 48),
   );
-
-  const { data: memberships } = await supabase
-    .from("space_memberships")
-    .select("space_id")
-    .eq("user_id", effectiveUserId);
-
-  const memberSpaceIds = [
-    ...new Set((memberships ?? []).map((m) => m.space_id as string)),
-  ];
-
-  const allSpaceIds = profile.is_admin
-    ? (
-        await supabase.from("spaces").select("id").eq("status", "active")
-      ).data?.map((b) => b.id as string) ?? memberSpaceIds
-    : memberSpaceIds;
-
-  const allowed = spaceId
-    ? allSpaceIds.includes(spaceId)
-      ? [spaceId]
-      : []
-    : allSpaceIds;
-
-  if (allowed.length === 0) {
-    return NextResponse.json({ nodes: [], count: 0, view });
-  }
 
   let nodes: FsNode[] = [];
 
@@ -67,9 +41,7 @@ export async function GET(request: Request) {
       .from("fs_nodes")
       .select(FS_NODE_COLS)
       .in("id", ids)
-      .in("space_id", allowed)
-      .eq("is_deleted", false)
-      .eq("node_type", "file");
+      .eq("is_deleted", false);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -81,7 +53,6 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("fs_nodes")
       .select(FS_NODE_COLS)
-      .in("space_id", allowed)
       .eq("is_deleted", true)
       .order("deleted_at", { ascending: false })
       .limit(limit);
@@ -93,7 +64,6 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("fs_nodes")
       .select(FS_NODE_COLS)
-      .in("space_id", allowed)
       .eq("is_deleted", false)
       .eq("node_type", "file")
       .order("updated_at", { ascending: false })
@@ -106,7 +76,6 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from("fs_nodes")
       .select(FS_NODE_COLS)
-      .in("space_id", allowed)
       .eq("is_deleted", false)
       .eq("node_type", "file")
       .order("created_at", { ascending: false })

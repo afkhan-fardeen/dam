@@ -62,7 +62,7 @@ export function AdminSpacesClient() {
     }
     if (storageRes.ok) {
       const map = new Map<string, number>();
-      for (const row of (storageJson.usage as StorageRow[]) ?? []) {
+      for (const row of (storageJson.usage as StorageRow[] | undefined) ?? []) {
         map.set(row.space_id, row.bytes);
       }
       setStorage(map);

@@ -75,18 +75,13 @@ export function SearchTypeahead({
 
   function goNode(node: FsNode) {
     onSelect();
-    const space = spaceById.get(node.space_id);
-    if (!space) {
-      navigate(`/search?q=${encodeURIComponent(q)}`);
-      return;
-    }
     if (node.node_type === "folder") {
-      navigate(`/s/${space.slug}?folder=${encodeURIComponent(node.id)}`);
+      navigate(`/?folder=${encodeURIComponent(node.id)}`);
       return;
     }
     const params = new URLSearchParams();
     if (node.parent_id) params.set("folder", node.parent_id);
-    navigate(`/s/${space.slug}?${params.toString()}`);
+    navigate(`/?${params.toString()}`);
   }
 
   function ResultRow({
@@ -141,7 +136,7 @@ export function SearchTypeahead({
               key={f.id}
               icon={<IconFolder size={16} stroke={1.75} />}
               title={f.name}
-              meta={spaceById.get(f.space_id)?.name}
+              meta={f.relative_path}
               chip="Folder"
               onClick={() => goNode(f)}
             />
@@ -157,7 +152,7 @@ export function SearchTypeahead({
               key={a.id}
               icon={<IconPhoto size={16} stroke={1.75} />}
               title={a.name}
-              meta={spaceById.get(a.space_id)?.name}
+              meta={a.relative_path}
               thumb={
                 a.has_thumbnail
                   ? `/api/fs/media/thumbnail/${encodeURIComponent(a.id)}`
@@ -177,7 +172,7 @@ export function SearchTypeahead({
               key={a.id}
               icon={<IconFile size={16} stroke={1.75} />}
               title={a.name}
-              meta={spaceById.get(a.space_id)?.name}
+              meta={a.relative_path}
               onClick={() => goNode(a)}
             />
           ))}

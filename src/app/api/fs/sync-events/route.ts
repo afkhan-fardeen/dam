@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
-import {
-  basenamePath,
-  joinRelative,
-  parentRelativePath,
-} from "@/lib/fsNodes";
+import { basenamePath, parentRelativePath } from "@/lib/fsNodes";
 
 export const runtime = "nodejs";
 
@@ -21,30 +17,11 @@ type SyncEvent = {
   nodes?: SyncEvent[];
 };
 
-function spaceSlugFromPath(relativePath: string): string | null {
-  const parts = relativePath.replace(/\\/g, "/").split("/").filter(Boolean);
-  return parts[0] || null;
-}
-
-async function spaceIdForSlug(
-  admin: ReturnType<typeof getSupabaseAdmin>,
-  slug: string,
-): Promise<string | null> {
-  const { data } = await admin
-    .from("spaces")
-    .select("id")
-    .eq("slug", slug)
-    .maybeSingle();
-  return data?.id ?? null;
-}
-
 async function ensureAncestors(
   admin: ReturnType<typeof getSupabaseAdmin>,
-  spaceId: string,
   relativePath: string,
 ): Promise<string | null> {
   const parts = relativePath.split("/").filter(Boolean);
-  // parts[0] is space slug root folder name on disk
   let parentId: string | null = null;
   let built = "";
   for (let i = 0; i < parts.length - 1; i++) {
@@ -52,7 +29,6 @@ async function ensureAncestors(
     const { data: existing } = await admin
       .from("fs_nodes")
       .select("id")
-      .eq("space_id", spaceId)
       .eq("relative_path", built)
       .maybeSingle();
     if (existing?.id) {
@@ -60,17 +36,21 @@ async function ensureAncestors(
       continue;
     }
     const currentParent = parentId;
-    const { data, error } = await admin.from("fs_nodes").insert({
-      space_id: spaceId,
-      parent_id: currentParent,
-      node_type: "folder",
-      name: parts[i],
-      relative_path: built,
-      is_deleted: false,
-      last_synced_at: new Date().toISOString(),
-    }).select("id").single();
+    const { data, error } = await admin
+      .from("fs_nodes")
+      .insert({
+        parent_id: currentParent,
+        node_type: "folder",
+        name: parts[i],
+        relative_path: built,
+        is_deleted: false,
+        last_synced_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
     if (error) throw error;
     parentId = data!.id as string;
+    // Explorer-created folders: no creator grant (admin-only until shared)
   }
   return parentId;
 }
@@ -79,31 +59,27 @@ async function upsertPresent(
   admin: ReturnType<typeof getSupabaseAdmin>,
   ev: SyncEvent,
 ) {
-  const relative = (ev.relative_path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  const relative = (ev.relative_path || "")
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
   if (!relative) return;
-  const slug = spaceSlugFromPath(relative);
-  if (!slug) return;
-  const spaceId = await spaceIdForSlug(admin, slug);
-  if (!spaceId) return;
 
   const name = ev.name || basenamePath(relative);
   const nodeType = ev.node_type || "file";
-  const parentId = await ensureAncestors(admin, spaceId, relative);
+  const parentId = await ensureAncestors(admin, relative);
 
   const { data: existing } = await admin
     .from("fs_nodes")
     .select("id,is_deleted")
-    .eq("space_id", spaceId)
     .eq("relative_path", relative)
     .maybeSingle();
 
   const row = {
-    space_id: spaceId,
     parent_id: parentId,
     node_type: nodeType,
     name,
     relative_path: relative,
-    size_bytes: nodeType === "file" ? ev.size_bytes ?? null : null,
+    size_bytes: nodeType === "file" ? (ev.size_bytes ?? null) : null,
     mime_type: ev.mime_type ?? null,
     content_hash: ev.content_hash ?? null,
     has_thumbnail: Boolean(ev.has_thumbnail),
@@ -116,12 +92,10 @@ async function upsertPresent(
   if (existing?.id) {
     await admin.from("fs_nodes").update(row).eq("id", existing.id);
   } else {
-    // Rename heuristic: same hash+size recently deleted elsewhere in space
     if (ev.content_hash && ev.size_bytes != null) {
       const { data: candidates } = await admin
         .from("fs_nodes")
         .select("id")
-        .eq("space_id", spaceId)
         .eq("content_hash", ev.content_hash)
         .eq("size_bytes", ev.size_bytes)
         .eq("is_deleted", true)
@@ -150,10 +124,6 @@ async function markMissing(
 ) {
   const path = relative.replace(/\\/g, "/").replace(/^\/+/, "");
   if (!path) return;
-  const slug = spaceSlugFromPath(path);
-  if (!slug) return;
-  const spaceId = await spaceIdForSlug(admin, slug);
-  if (!spaceId) return;
   await admin
     .from("fs_nodes")
     .update({
@@ -161,7 +131,6 @@ async function markMissing(
       deleted_at: new Date().toISOString(),
       last_synced_at: new Date().toISOString(),
     })
-    .eq("space_id", spaceId)
     .eq("relative_path", path)
     .eq("is_deleted", false);
 }
@@ -188,7 +157,6 @@ export async function POST(request: Request) {
         for (const n of ev.nodes) {
           await upsertPresent(admin, { ...n, type: "present" });
         }
-        // Mark DB nodes missing from sweep as externally deleted (not portal-trash)
         const { data: live } = await admin
           .from("fs_nodes")
           .select("id,relative_path")
@@ -227,6 +195,4 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, processed: events.length });
 }
 
-// silence unused import warnings for helpers reserved for portal writes
-void joinRelative;
 void parentRelativePath;

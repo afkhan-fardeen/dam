@@ -348,9 +348,6 @@ export function SpaceWorkspace({
 
   useEffect(() => {
     setPlaceNav({
-      spaceSlug: space.slug,
-      spaceName: space.name,
-      spaceId: space.id,
       folders,
       currentFolderId: folderId,
       onNavigateFolder: navigateFolder,
@@ -358,9 +355,6 @@ export function SpaceWorkspace({
     });
     return () => setPlaceNav(null);
   }, [
-    space.slug,
-    space.name,
-    space.id,
     folders,
     folderId,
     navigateFolder,

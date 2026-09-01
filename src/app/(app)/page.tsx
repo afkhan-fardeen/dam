@@ -1,19 +1,21 @@
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getUserSpaces } from "@/lib/auth";
-import { HomeClient } from "@/components/HomeClient";
+import { DriveHomeClient } from "@/components/DriveHomeClient";
 
 export default async function HomePage() {
-  const { spaces, memberships, profile, user } = await getUserSpaces();
+  const { profile, user } = await getUserSpaces();
   if (!user || !profile) redirect("/login");
 
   return (
-    <Suspense fallback={<div className="p-5"><div className="surface p-4"><div className="flat-skeleton h-3 w-1/3 mb-3" /><div className="flat-skeleton h-3 w-full mb-2" /><div className="flat-skeleton h-3 w-2/3" /></div></div>}>
-      <HomeClient
-        spaces={spaces}
-        memberships={memberships}
-        profileName={profile.full_name || profile.email || ""}
+    <Suspense
+      fallback={
+        <div className="p-5 text-sm text-base-content/60">Loading…</div>
+      }
+    >
+      <DriveHomeClient
         isAdmin={profile.is_admin}
+        profileName={profile.full_name || profile.email || "You"}
       />
     </Suspense>
   );

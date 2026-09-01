@@ -154,9 +154,26 @@ export type AssetAttributeValue = {
 
 export type FsNodeType = "file" | "folder";
 
+export type PermissionLevel = "view" | "download" | "edit";
+
+export type AccessGroup = {
+  id: string;
+  name: string;
+  created_at: string | null;
+};
+
+export type FolderPermission = {
+  id: string;
+  fs_node_id: string;
+  principal_type: "user" | "group" | "everyone";
+  principal_id: string | null;
+  level: PermissionLevel;
+  passcode_required: boolean;
+  created_at: string | null;
+};
+
 export type FsNode = {
   id: string;
-  space_id: string;
   parent_id: string | null;
   node_type: FsNodeType;
   name: string;
@@ -178,6 +195,8 @@ export type FsNode = {
   tags?: Tag[];
   favorited?: boolean;
   locked?: boolean;
+  can_edit?: boolean;
+  can_download?: boolean;
 };
 
 export type StorageStatus = {

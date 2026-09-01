@@ -64,10 +64,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
     return () => window.clearTimeout(handle);
   }, [load]);
 
-  const filtered = useMemo(() => {
-    if (!spaceFilter) return nodes;
-    return nodes.filter((n) => n.space_id === spaceFilter);
-  }, [nodes, spaceFilter]);
+  const filtered = useMemo(() => nodes, [nodes]);
 
   const folders = useMemo(
     () => filtered.filter((n) => n.node_type === "folder"),
@@ -87,14 +84,12 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
   );
 
   function openNode(node: FsNode) {
-    const space = spaceById.get(node.space_id);
-    if (!space) return;
     if (node.node_type === "folder") {
-      navigate(`/s/${space.slug}?folder=${encodeURIComponent(node.id)}`);
+      navigate(`/?folder=${encodeURIComponent(node.id)}`);
     } else if (node.parent_id) {
-      navigate(`/s/${space.slug}?folder=${encodeURIComponent(node.parent_id)}`);
+      navigate(`/?folder=${encodeURIComponent(node.parent_id)}`);
     } else {
-      navigate(`/s/${space.slug}`);
+      navigate(`/`);
     }
   }
 
@@ -205,7 +200,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
                         {n.name}
                       </span>
                       <span className="text-xs text-base-content/50">
-                        {spaceById.get(n.space_id)?.name}
+                        {n.relative_path}
                       </span>
                     </button>
                   </li>
@@ -256,7 +251,7 @@ export function GlobalSearchClient({ spaces }: GlobalSearchClientProps) {
                         {n.name}
                       </span>
                       <span className="text-xs text-base-content/50">
-                        {spaceById.get(n.space_id)?.name}
+                        {n.relative_path}
                       </span>
                     </button>
                   </li>

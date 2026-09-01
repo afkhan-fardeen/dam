@@ -1,35 +1,16 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { FsBrowseClient } from "@/components/FsBrowseClient";
-import { HomeGlass } from "@/components/HomeGlass";
-import type { Space, SpaceMembership } from "@/lib/types";
+import { DriveHomeClient } from "@/components/DriveHomeClient";
 
-type HomeClientProps = {
-  spaces: Space[];
-  memberships: SpaceMembership[];
-  profileName: string;
-  isAdmin: boolean;
-};
-
+/** @deprecated Use DriveHomeClient */
 export function HomeClient({
-  spaces,
-  memberships,
   profileName,
   isAdmin,
-}: HomeClientProps) {
-  const searchParams = useSearchParams();
-  const view = searchParams.get("view") || "all";
-
-  if (view === "all") {
-    return <HomeGlass profileName={profileName} spaces={spaces} />;
-  }
-
-  return (
-    <FsBrowseClient
-      spaces={spaces}
-      memberships={memberships}
-      isAdmin={isAdmin}
-    />
-  );
+}: {
+  spaces?: unknown;
+  memberships?: unknown;
+  profileName: string;
+  isAdmin: boolean;
+}) {
+  return <DriveHomeClient isAdmin={isAdmin} profileName={profileName} />;
 }

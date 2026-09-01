@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconClock,
@@ -21,16 +20,13 @@ import { useDriveChrome } from "@/components/DriveChrome";
 import { FolderTree } from "@/components/FolderTree";
 import { Menu } from "@/components/ui/Menu";
 import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
-import { prefetchFolderAssets } from "@/lib/folderAssetsCache";
 import type { ServerStatus } from "@/lib/useFileServerHealth";
 import type { Folder, Profile, Space } from "@/lib/types";
 
 const ADMIN_LINKS = [
-  { id: "spaces", label: "Spaces", href: "/admin/spaces" },
   { id: "users", label: "Users", href: "/admin/users" },
+  { id: "groups", label: "Groups", href: "/admin/groups" },
   { id: "tags", label: "Tags", href: "/admin/tags" },
-  { id: "entities", label: "Entities", href: "/admin/entities" },
-  { id: "attributes", label: "Attributes", href: "/admin/attributes" },
   { id: "activity", label: "Activity", href: "/admin/activity" },
 ] as const;
 
@@ -76,7 +72,7 @@ function serverCopy(status: ServerStatus): {
 }
 
 export function AppSidebar({
-  spaces,
+  spaces: _spaces,
   showTrash = false,
   open,
   onClose,
@@ -105,108 +101,60 @@ export function AppSidebar({
 
   const displayName = profile.full_name?.trim() || profile.email || "Account";
 
-  const view = searchParams.get("view") || "all";
+  const view = searchParams.get("view") || "files";
   const onHome = pathname === "/";
-  const activeSlug = pathname.startsWith("/s/")
-    ? pathname.split("/")[2]
-    : null;
+  const folderParam = searchParams.get("folder");
 
-  const [foldersBySpaceId, setFoldersBySpaceId] = useState<
-    Record<string, Folder[]>
-  >({});
-  const [expandedSlugs, setExpandedSlugs] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [folders, setFolders] = useState<Folder[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const entries = await Promise.all(
-        spaces.map(async (s) => {
-          try {
-            const res = await fetch(
-              `/api/fs/list?space_id=${encodeURIComponent(s.id)}&folders=1`,
-            );
-            const json = await res.json();
-            const nodes = res.ok
-              ? ((json.nodes as {
-                  id: string;
-                  space_id: string;
-                  parent_id: string | null;
-                  name: string;
-                  created_by: string | null;
-                  created_at: string | null;
-                  passcode_enabled?: boolean;
-                }[]) ?? [])
-              : [];
-            const ids = new Set(nodes.map((n) => n.id));
-            const folders: Folder[] = nodes.map((n) => ({
+      try {
+        const res = await fetch(`/api/fs/list?folders=1`);
+        const json = await res.json();
+        const nodes = res.ok
+          ? ((json.nodes as {
+              id: string;
+              parent_id: string | null;
+              name: string;
+              created_by: string | null;
+              created_at: string | null;
+              passcode_enabled?: boolean;
+            }[]) ?? [])
+          : [];
+        const ids = new Set(nodes.map((n) => n.id));
+        if (!cancelled) {
+          setFolders(
+            nodes.map((n) => ({
               id: n.id,
-              space_id: n.space_id,
+              space_id: "",
               parent_folder_id:
                 n.parent_id && ids.has(n.parent_id) ? n.parent_id : null,
               name: n.name,
               created_by: n.created_by,
               created_at: n.created_at,
               passcode_enabled: n.passcode_enabled,
-            }));
-            return [s.id, folders] as const;
-          } catch {
-            return [s.id, [] as Folder[]] as const;
-          }
-        }),
-      );
-      if (!cancelled) setFoldersBySpaceId(Object.fromEntries(entries));
+            })),
+          );
+        }
+      } catch {
+        if (!cancelled) setFolders([]);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [spaces, libraryEpoch]);
-
-  useEffect(() => {
-    if (!activeSlug) return;
-    setExpandedSlugs((prev) => {
-      if (prev.has(activeSlug)) return prev;
-      const next = new Set(prev);
-      next.add(activeSlug);
-      return next;
-    });
-  }, [activeSlug]);
+  }, [libraryEpoch]);
 
   useEffect(() => {
     if (!placeNav) return;
-    const space = spaces.find((s) => s.slug === placeNav.spaceSlug);
-    if (!space) return;
-    setFoldersBySpaceId((prev) => ({
-      ...prev,
-      [space.id]: placeNav.folders,
-    }));
-  }, [placeNav, spaces]);
-
-  const rootFolderCount = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const s of spaces) {
-      const folders = foldersBySpaceId[s.id] ?? [];
-      map.set(
-        s.id,
-        folders.filter((f) => f.parent_folder_id == null).length,
-      );
-    }
-    return map;
-  }, [spaces, foldersBySpaceId]);
+    setFolders(placeNav.folders);
+  }, [placeNav]);
 
   function go(href: string) {
     navigate(href);
     onClose();
-  }
-
-  function toggleExpanded(slug: string) {
-    setExpandedSlugs((prev) => {
-      const next = new Set(prev);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
-      return next;
-    });
   }
 
   return (
@@ -221,7 +169,7 @@ export function AppSidebar({
         className={`app-sidebar${open ? " is-open" : ""}${
           collapsed ? " is-collapsed" : ""
         }`}
-        aria-label={mode === "admin" ? "Admin" : "Spaces"}
+        aria-label={mode === "admin" ? "Admin" : "Files"}
       >
         <div className="app-sidebar-brand">
           <Link
@@ -294,12 +242,12 @@ export function AppSidebar({
               <div className="app-sidebar-section">
                 <button
                   type="button"
-                  className={`app-sidebar-link${onHome && view === "all" ? " active" : ""}`}
-                  title="Home"
+                  className={`app-sidebar-link${onHome && (!view || view === "files" || view === "all") && !folderParam ? " active" : ""}`}
+                  title="All files"
                   onClick={() => go("/")}
                 >
                   <IconHome size={16} stroke={1.75} />
-                  <span className="app-sidebar-link-text">Home</span>
+                  <span className="app-sidebar-link-text">All files</span>
                 </button>
                 <button
                   type="button"
@@ -334,123 +282,38 @@ export function AppSidebar({
 
               <div className="app-sidebar-section">
                 {!collapsed ? (
-                  <div className="app-sidebar-label">Spaces</div>
+                  <div className="app-sidebar-label">Folders</div>
                 ) : null}
-                {spaces.length === 0 ? (
-                  !collapsed ? (
-                    <p className="app-sidebar-empty">No spaces yet</p>
-                  ) : null
-                ) : (
-                  <ul className="app-sidebar-places">
-                    {spaces.map((s) => {
-                      const active = activeSlug === s.slug;
-                      const folders =
-                        active && placeNav?.spaceSlug === s.slug
-                          ? placeNav.folders
-                          : (foldersBySpaceId[s.id] ?? []);
-                      const hasFolders =
-                        (rootFolderCount.get(s.id) ?? 0) > 0 ||
-                        folders.some((f) => f.parent_folder_id == null);
-                      const isExpanded = expandedSlugs.has(s.slug);
-                      const showTree =
-                        !collapsed && isExpanded && hasFolders;
-
-                      return (
-                        <li
-                          key={s.id}
-                          className={`app-sidebar-place-block${active ? " is-active" : ""}`}
-                        >
-                          <div className="app-sidebar-place-row">
-                            {!collapsed && hasFolders ? (
-                              <button
-                                type="button"
-                                className="app-sidebar-place-chevron"
-                                aria-label={
-                                  isExpanded
-                                    ? `Collapse ${s.name}`
-                                    : `Expand ${s.name}`
-                                }
-                                aria-expanded={isExpanded}
-                                onClick={() => toggleExpanded(s.slug)}
-                              >
-                                {isExpanded ? (
-                                  <IconChevronDown size={14} stroke={1.75} />
-                                ) : (
-                                  <IconChevronRight size={14} stroke={1.75} />
-                                )}
-                              </button>
-                            ) : !collapsed ? (
-                              <span className="app-sidebar-place-chevron is-empty" />
-                            ) : null}
-                            <button
-                              type="button"
-                              className={`app-sidebar-place${active ? " active" : ""}`}
-                              title={s.name}
-                              onClick={() => {
-                                if (
-                                  !collapsed &&
-                                  !isExpanded &&
-                                  hasFolders
-                                ) {
-                                  toggleExpanded(s.slug);
-                                }
-                                if (active && placeNav?.currentFolderId) {
-                                  placeNav.onNavigateFolder(null);
-                                  onClose();
-                                  return;
-                                }
-                                go(`/s/${s.slug}`);
-                              }}
-                            >
-                              <span
-                                className="app-sidebar-dot"
-                                style={{ backgroundColor: s.color }}
-                                aria-hidden
-                              />
-                              <span className="app-sidebar-link-text truncate">
-                                {s.name}
-                              </span>
-                            </button>
-                          </div>
-                          {showTree ? (
-                            <div className="app-sidebar-place-tree">
-                              <FolderTree
-                                variant="embedded"
-                                showRoot={false}
-                                baseDepth={1}
-                                folders={folders}
-                                spaceName={s.name}
-                                currentFolderId={
-                                  active && placeNav
-                                    ? placeNav.currentFolderId
-                                    : null
-                                }
-                                onNavigate={(id) => {
-                                  if (active && placeNav) {
-                                    placeNav.onNavigateFolder(id);
-                                  } else {
-                                    const qs = id
-                                      ? `?folder=${encodeURIComponent(id)}`
-                                      : "";
-                                    navigate(`/s/${s.slug}${qs}`);
-                                  }
-                                  onClose();
-                                }}
-                                onPrefetch={(id) => {
-                                  if (active && placeNav?.onPrefetchFolder) {
-                                    placeNav.onPrefetchFolder(id);
-                                  } else {
-                                    void prefetchFolderAssets(s.id, id);
-                                  }
-                                }}
-                              />
-                            </div>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                {!collapsed && folders.length === 0 ? (
+                  <p className="app-sidebar-empty">No folders yet</p>
+                ) : !collapsed ? (
+                  <div className="app-sidebar-place-tree">
+                    <FolderTree
+                      variant="embedded"
+                      showRoot={false}
+                      baseDepth={0}
+                      folders={folders}
+                      spaceName="Drive"
+                      currentFolderId={
+                        placeNav?.currentFolderId ?? folderParam
+                      }
+                      onNavigate={(id) => {
+                        if (placeNav) {
+                          placeNav.onNavigateFolder(id);
+                        } else {
+                          const qs = id
+                            ? `?folder=${encodeURIComponent(id)}`
+                            : "";
+                          navigate(`/${qs}`);
+                        }
+                        onClose();
+                      }}
+                      onPrefetch={(id) => {
+                        placeNav?.onPrefetchFolder?.(id);
+                      }}
+                    />
+                  </div>
+                ) : null}
               </div>
             </>
           )}

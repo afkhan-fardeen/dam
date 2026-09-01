@@ -47,36 +47,19 @@ export async function GET(request: Request) {
     }
   }
 
-  const { data: spaces } = await supabase
-    .from("spaces")
-    .select("id,name,color,status")
-    .order("name");
-
   const { data: nodes } = await supabase
     .from("fs_nodes")
-    .select("space_id,size_bytes,is_deleted,node_type")
+    .select("size_bytes,is_deleted,node_type")
     .eq("is_deleted", false)
     .eq("node_type", "file");
 
-  const bySpace = new Map<string, number>();
-  for (const n of nodes ?? []) {
-    if (!n.space_id) continue;
-    bySpace.set(
-      n.space_id,
-      (bySpace.get(n.space_id) || 0) + Number(n.size_bytes || 0),
-    );
-  }
-
-  const usage = (spaces ?? []).map((s) => ({
-    space_id: s.id,
-    name: s.name,
-    color: s.color,
-    status: s.status,
-    bytes: bySpace.get(s.id) || 0,
-  }));
+  const indexedBytes = (nodes ?? []).reduce(
+    (sum, n) => sum + Number(n.size_bytes || 0),
+    0,
+  );
 
   return NextResponse.json({
     disk: live,
-    usage,
+    indexed_bytes: indexedBytes,
   });
 }

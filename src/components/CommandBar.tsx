@@ -31,7 +31,7 @@ function fsNodeToAsset(node: FsNode): Asset {
     original_name: node.name,
     mime_type: node.mime_type,
     size: node.size_bytes,
-    space_id: node.space_id,
+    space_id: null,
     folder_id: node.parent_id,
     description: node.description,
     created_by: node.created_by,
@@ -205,17 +205,9 @@ export function CommandBar({
       router.push(`/e/${item.entity.id}`);
     } else if (item.kind === "document") {
       setOpen(false);
-      const space = spaces.find((s) => s.id === item.asset.space_id);
-      if (space) {
-        const params = new URLSearchParams();
-        if (item.asset.folder_id) params.set("folder", item.asset.folder_id);
-        params.set("asset", item.asset.id);
-        router.push(`/s/${space.slug}?${params.toString()}`);
-      } else {
-        router.push(
-          `/search?q=${encodeURIComponent(item.asset.original_name || "")}`,
-        );
-      }
+      const params = new URLSearchParams();
+      if (item.asset.folder_id) params.set("folder", item.asset.folder_id);
+      router.push(`/?${params.toString()}`);
     }
   }
 

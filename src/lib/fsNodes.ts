@@ -1,13 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { FsNode, Tag } from "@/lib/types";
+import type { FsNode, PermissionLevel, Tag } from "@/lib/types";
 
 export const FS_NODE_COLS =
-  "id,space_id,parent_id,node_type,name,relative_path,size_bytes,mime_type,content_hash,description,created_by,uploaded_by,has_thumbnail,passcode_enabled,tags_text,last_synced_at,is_deleted,deleted_at,created_at,updated_at";
-
-/** Space tree root = slug under STORAGE_ROOT (no absolute paths stored). */
-export function spaceRootPath(slug: string): string {
-  return slug.replace(/^\/+|\/+$/g, "").replace(/\\/g, "/");
-}
+  "id,parent_id,node_type,name,relative_path,size_bytes,mime_type,content_hash,description,created_by,uploaded_by,has_thumbnail,passcode_enabled,tags_text,last_synced_at,is_deleted,deleted_at,created_at,updated_at";
 
 export function joinRelative(...parts: (string | null | undefined)[]): string {
   return parts
@@ -28,6 +23,10 @@ export function basenamePath(relativePath: string): string {
   const norm = relativePath.replace(/\\/g, "/").replace(/\/+$/g, "");
   const i = norm.lastIndexOf("/");
   return i >= 0 ? norm.slice(i + 1) : norm;
+}
+
+export function normalizeRelativePath(relativePath: string): string {
+  return relativePath.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
 export async function attachFsNodeTags(
@@ -166,7 +165,6 @@ export async function setFsNodeTags(
 export async function listFsChildren(
   supabase: SupabaseClient,
   options: {
-    spaceId: string;
     parentId: string | null;
     includeDeleted?: boolean;
   },
@@ -174,7 +172,6 @@ export async function listFsChildren(
   let query = supabase
     .from("fs_nodes")
     .select(FS_NODE_COLS)
-    .eq("space_id", options.spaceId)
     .order("node_type", { ascending: true })
     .order("name", { ascending: true });
 
@@ -194,79 +191,86 @@ export async function listFsChildren(
 
 export async function getFsNodeByPath(
   supabase: SupabaseClient,
-  spaceId: string,
   relativePath: string,
 ): Promise<FsNode | null> {
-  const path = relativePath.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const path = normalizeRelativePath(relativePath);
   const { data, error } = await supabase
     .from("fs_nodes")
     .select(FS_NODE_COLS)
-    .eq("space_id", spaceId)
     .eq("relative_path", path)
     .maybeSingle();
   if (error) throw error;
   return (data as FsNode | null) ?? null;
 }
 
-/** Ensure the space-slug root folder exists in DB (and optionally on disk). */
-export async function ensureSpaceRootNode(
+/** Resolve parent folder; null parent = drive root (empty path). */
+export async function resolveParentFolder(
   supabase: SupabaseClient,
-  spaceId: string,
-  spaceSlug: string,
-  opts?: { mkdir?: boolean },
-): Promise<FsNode> {
-  const relativePath = spaceRootPath(spaceSlug);
-  const existing = await getFsNodeByPath(supabase, spaceId, relativePath);
-  if (existing) return existing;
-
-  if (opts?.mkdir !== false) {
-    try {
-      const { fsMkdir } = await import("@/lib/fsClient");
-      await fsMkdir(relativePath);
-    } catch {
-      /* may already exist on disk */
-    }
+  parentId: string | null | undefined,
+): Promise<{ parentId: string | null; parentPath: string }> {
+  if (!parentId) {
+    return { parentId: null, parentPath: "" };
   }
-
-  const { data, error } = await supabase
+  const { data: parent, error } = await supabase
     .from("fs_nodes")
-    .upsert(
-      {
-        space_id: spaceId,
-        parent_id: null,
-        node_type: "folder",
-        name: spaceSlug,
-        relative_path: relativePath,
-        is_deleted: false,
-      },
-      { onConflict: "space_id,relative_path" },
-    )
     .select(FS_NODE_COLS)
-    .single();
+    .eq("id", parentId)
+    .maybeSingle();
   if (error) throw error;
-  return data as FsNode;
+  if (!parent || parent.node_type !== "folder" || parent.is_deleted) {
+    throw new Error("Parent folder not found");
+  }
+  return { parentId: parent.id, parentPath: parent.relative_path };
 }
 
-/** Resolve UI parent_id=null to the space root folder node id. */
-export async function resolveParentFolderId(
+/** Grant creator edit on a newly created folder. */
+export async function grantCreatorEdit(
   supabase: SupabaseClient,
-  spaceId: string,
-  spaceSlug: string,
-  parentId: string | null | undefined,
-): Promise<{ parentId: string; parentPath: string }> {
-  if (parentId) {
-    const { data: parent, error } = await supabase
-      .from("fs_nodes")
-      .select(FS_NODE_COLS)
-      .eq("id", parentId)
-      .eq("space_id", spaceId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!parent || parent.node_type !== "folder" || parent.is_deleted) {
-      throw new Error("Parent folder not found");
-    }
-    return { parentId: parent.id, parentPath: parent.relative_path };
-  }
-  const root = await ensureSpaceRootNode(supabase, spaceId, spaceSlug);
-  return { parentId: root.id, parentPath: root.relative_path };
+  folderId: string,
+  userId: string,
+): Promise<void> {
+  const { error } = await supabase.from("folder_permissions").upsert(
+    {
+      fs_node_id: folderId,
+      principal_type: "user",
+      principal_id: userId,
+      level: "edit" satisfies PermissionLevel,
+      passcode_required: false,
+    },
+    { onConflict: "fs_node_id,principal_type,principal_id" },
+  );
+  if (error) throw error;
+}
+
+export async function rpcCanEditNode(
+  supabase: SupabaseClient,
+  nodeId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("can_edit_node", {
+    p_node_id: nodeId,
+  });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function rpcCanViewNode(
+  supabase: SupabaseClient,
+  nodeId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("can_view_node", {
+    p_node_id: nodeId,
+  });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function rpcCanDownloadNode(
+  supabase: SupabaseClient,
+  nodeId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("can_download_node", {
+    p_node_id: nodeId,
+  });
+  if (error) throw error;
+  return Boolean(data);
 }

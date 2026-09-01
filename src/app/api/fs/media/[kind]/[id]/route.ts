@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireUser, roleForSpace, logActivity } from "@/lib/auth";
-import { canDownload } from "@/lib/types";
-import { FS_NODE_COLS } from "@/lib/fsNodes";
+import { requireUser, logActivity } from "@/lib/auth";
+import {
+  FS_NODE_COLS,
+  rpcCanDownloadNode,
+  rpcCanViewNode,
+} from "@/lib/fsNodes";
 import { signFileApiToken, buildFileApiUrl } from "@/lib/fileApiAuth";
 
 export const runtime = "nodejs";
@@ -10,7 +13,6 @@ type RouteContext = {
   params: Promise<{ kind: string; id: string }>;
 };
 
-/** Proxy /fs/read and /fs/thumbnail through Next (auth + passcode-ready). */
 export async function GET(request: Request, context: RouteContext) {
   const { user, profile, effectiveUserId, supabase } =
     await requireUser(request);
@@ -36,24 +38,22 @@ export async function GET(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Not a file" }, { status: 400 });
   }
 
-  const { data: memberships } = await supabase
-    .from("space_memberships")
-    .select("id,space_id,user_id,role,created_at")
-    .eq("user_id", effectiveUserId);
-  const role = roleForSpace(
-    memberships ?? [],
-    node.space_id,
-    profile.is_admin,
-  );
-  if (!role && !profile.is_admin) {
+  const canView =
+    profile.is_admin || (await rpcCanViewNode(supabase, id).catch(() => false));
+  if (!canView) {
     return NextResponse.json({ error: "No access" }, { status: 403 });
   }
 
-  if (kind === "file" && !canDownload(role, profile.is_admin)) {
-    return NextResponse.json(
-      { error: "You can view this file, but not download the original." },
-      { status: 403 },
-    );
+  if (kind === "file") {
+    const canDl =
+      profile.is_admin ||
+      (await rpcCanDownloadNode(supabase, id).catch(() => false));
+    if (!canDl) {
+      return NextResponse.json(
+        { error: "You can view this file, but not download the original." },
+        { status: 403 },
+      );
+    }
   }
 
   const fsPath = kind === "file" ? "/fs/read" : "/fs/thumbnail";
@@ -79,7 +79,11 @@ export async function GET(request: Request, context: RouteContext) {
   if (!upstream.ok && upstream.status !== 206) {
     const detail = await upstream.text().catch(() => "");
     return NextResponse.json(
-      { error: "Could not load media", status: upstream.status, detail: detail.slice(0, 200) },
+      {
+        error: "Could not load media",
+        status: upstream.status,
+        detail: detail.slice(0, 200),
+      },
       { status: 502 },
     );
   }
@@ -88,7 +92,6 @@ export async function GET(request: Request, context: RouteContext) {
     await logActivity(
       {
         user_id: user.id,
-        space_id: node.space_id,
         action: "download",
         target_type: "fs_node",
         target_id: node.id,

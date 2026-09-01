@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   IconDownload,
@@ -12,18 +12,15 @@ import {
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { ViewModeToggle } from "@/components/ViewModeToggle";
 import { useDriveChrome } from "@/components/DriveChrome";
-import { canDownload, canEdit, type FsNode, type Space, type SpaceMembership } from "@/lib/types";
-import { roleForSpace } from "@/lib/auth-client";
+import type { FsNode } from "@/lib/types";
 import { readViewMode, writeViewMode, type ViewMode } from "@/lib/uiPrefs";
 import { getTagChipStyles } from "@/lib/categories";
 
 type Props = {
-  spaces: Space[];
-  memberships: SpaceMembership[];
   isAdmin: boolean;
 };
 
-export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
+export function FsBrowseClient({ isAdmin }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = searchParams.get("view") || "all";
@@ -40,11 +37,6 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
   useEffect(() => {
     setViewMode(readViewMode());
   }, []);
-
-  const spaceById = useMemo(
-    () => new Map(spaces.map((s) => [s.id, s])),
-    [spaces],
-  );
 
   const title =
     view === "recent"
@@ -86,17 +78,14 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
     void load({ quiet: true });
   }, [libraryEpoch, load]);
 
-  function roleForNode(node: FsNode) {
-    return roleForSpace(memberships, node.space_id, isAdmin);
-  }
-
   async function toggleFavorite(node: FsNode) {
     const favorited = Boolean(node.favorited);
     try {
       if (favorited) {
-        await fetch(`/api/fs/favorites?fs_node_id=${encodeURIComponent(node.id)}`, {
-          method: "DELETE",
-        });
+        await fetch(
+          `/api/fs/favorites?fs_node_id=${encodeURIComponent(node.id)}`,
+          { method: "DELETE" },
+        );
       } else {
         await fetch("/api/fs/favorites", {
           method: "POST",
@@ -164,33 +153,13 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
     setBusy(true);
     const permanent = view === "trash";
     try {
-      if (permanent) {
-        const res = await fetch(
-          `/api/fs/nodes/${trashTarget.id}?permanent=1`,
-          { method: "DELETE" },
-        );
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.error || "Delete failed");
-        }
-      } else if (trashTarget.is_deleted) {
-        const res = await fetch(`/api/fs/nodes/${trashTarget.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ restore: true }),
-        });
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.error || "Restore failed");
-        }
-      } else {
-        const res = await fetch(`/api/fs/nodes/${trashTarget.id}`, {
-          method: "DELETE",
-        });
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.error || "Trash failed");
-        }
+      const res = await fetch(
+        `/api/fs/nodes/${trashTarget.id}${permanent ? "?permanent=1" : ""}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || "Delete failed");
       }
       setTrashTarget(null);
       await load({ quiet: true });
@@ -209,7 +178,9 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
         <div>
           <h1 className="text-xl font-semibold">{title}</h1>
           <p className="text-sm text-base-content/60">
-            {loading ? "Loading…" : `${nodes.length} item${nodes.length === 1 ? "" : "s"}`}
+            {loading
+              ? "Loading…"
+              : `${nodes.length} item${nodes.length === 1 ? "" : "s"}`}
           </p>
         </div>
         <ViewModeToggle
@@ -233,136 +204,9 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
         <div className="rounded-box border border-base-300/60 bg-base-100 p-10 text-center text-sm text-base-content/60">
           {view === "trash" ? "Trash is empty." : "No files yet."}
         </div>
-      ) : viewMode === "list" ? (
-        <div className="overflow-x-auto rounded-box border border-base-300/60">
-          <table className="table table-sm">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Space</th>
-                <th>Size</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {nodes.map((node) => {
-                const space = spaceById.get(node.space_id);
-                const role = roleForNode(node);
-                const editable = canEdit(role, isAdmin);
-                const downloadable = canDownload(role, isAdmin);
-                return (
-                  <tr key={node.id} className="hover">
-                    <td>
-                      <button
-                        type="button"
-                        className="link link-hover font-medium"
-                        onClick={() => {
-                          if (node.node_type === "folder" && space) {
-                            router.push(
-                              `/s/${space.slug}?folder=${encodeURIComponent(node.id)}`,
-                            );
-                          } else if (space) {
-                            router.push(
-                              `/s/${space.slug}?folder=${encodeURIComponent(node.parent_id || "")}`,
-                            );
-                          }
-                        }}
-                      >
-                        {node.node_type === "folder" ? (
-                          <IconFolder size={16} className="mr-1 inline" />
-                        ) : null}
-                        {node.name}
-                      </button>
-                      {node.tags?.length ? (
-                        <div className="mt-1 flex flex-wrap gap-1">
-                          {node.tags.slice(0, 3).map((t) => (
-                            <span
-                              key={t.id}
-                              className="badge badge-ghost badge-sm"
-                              style={getTagChipStyles(t.name).style}
-                            >
-                              {t.name}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td>{space?.name ?? "—"}</td>
-                    <td>
-                      {node.size_bytes != null
-                        ? `${(node.size_bytes / 1024).toFixed(0)} KB`
-                        : "—"}
-                    </td>
-                    <td className="text-right">
-                      <div className="join">
-                        {node.node_type === "file" ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs join-item"
-                            onClick={() => void toggleFavorite(node)}
-                            title="Favorite"
-                          >
-                            {node.favorited ? (
-                              <IconStarFilled size={14} />
-                            ) : (
-                              <IconStar size={14} />
-                            )}
-                          </button>
-                        ) : null}
-                        {downloadable && node.node_type === "file" && view !== "trash" ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs join-item"
-                            onClick={() => downloadNode(node)}
-                          >
-                            <IconDownload size={14} />
-                          </button>
-                        ) : null}
-                        {editable ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs join-item"
-                            onClick={() => setTrashTarget(node)}
-                          >
-                            <IconTrash size={14} />
-                          </button>
-                        ) : null}
-                        {view === "trash" && editable ? (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs"
-                            onClick={() => {
-                              void (async () => {
-                                const res = await fetch(`/api/fs/nodes/${node.id}`, {
-                                  method: "PATCH",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify({ restore: true }),
-                                });
-                                if (res.ok) {
-                                  await load({ quiet: true });
-                                  notifyLibraryChange();
-                                }
-                              })();
-                            }}
-                          >
-                            Restore
-                          </button>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {nodes.map((node) => {
-            const space = spaceById.get(node.space_id);
-            const role = roleForNode(node);
-            const editable = canEdit(role, isAdmin);
-            const downloadable = canDownload(role, isAdmin);
             const thumb =
               node.node_type === "file" && node.has_thumbnail
                 ? `/api/fs/media/thumbnail/${node.id}`
@@ -376,17 +220,14 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
                   type="button"
                   className="block w-full text-left"
                   onClick={() => {
-                    if (!space) return;
                     if (node.node_type === "folder") {
-                      router.push(
-                        `/s/${space.slug}?folder=${encodeURIComponent(node.id)}`,
-                      );
+                      router.push(`/?folder=${encodeURIComponent(node.id)}`);
                     } else if (node.parent_id) {
                       router.push(
-                        `/s/${space.slug}?folder=${encodeURIComponent(node.parent_id)}`,
+                        `/?folder=${encodeURIComponent(node.parent_id)}`,
                       );
                     } else {
-                      router.push(`/s/${space.slug}`);
+                      router.push("/");
                     }
                   }}
                 >
@@ -400,16 +241,26 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center text-base-content/40">
-                        <IconFolder size={36} />
+                        <IconFolder size={36} className="text-[#A7C3FA]" />
                       </div>
                     )}
                   </div>
-                  <div className="p-2">
-                    <div className="truncate text-sm font-medium">{node.name}</div>
-                    <div className="truncate text-xs text-base-content/50">
-                      {space?.name}
-                    </div>
+                  <div className="truncate p-2 text-sm font-medium">
+                    {node.name}
                   </div>
+                  {node.tags?.length ? (
+                    <div className="flex flex-wrap gap-1 px-2 pb-2">
+                      {node.tags.slice(0, 2).map((t) => (
+                        <span
+                          key={t.id}
+                          className="badge badge-ghost badge-xs"
+                          style={getTagChipStyles(t.name).style}
+                        >
+                          {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                 </button>
                 <div className="absolute right-1 top-1 flex gap-0.5 opacity-0 transition group-hover:opacity-100">
                   {node.node_type === "file" ? (
@@ -425,7 +276,7 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
                       )}
                     </button>
                   ) : null}
-                  {downloadable && node.node_type === "file" && view !== "trash" ? (
+                  {node.node_type === "file" && view !== "trash" ? (
                     <button
                       type="button"
                       className="btn btn-circle btn-xs"
@@ -434,7 +285,7 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
                       <IconDownload size={12} />
                     </button>
                   ) : null}
-                  {editable ? (
+                  {isAdmin || view === "trash" ? (
                     <button
                       type="button"
                       className="btn btn-circle btn-xs"
@@ -452,12 +303,10 @@ export function FsBrowseClient({ spaces, memberships, isAdmin }: Props) {
 
       {trashTarget ? (
         <ConfirmModal
-          title={
-            view === "trash" ? "Delete permanently?" : "Move to trash?"
-          }
+          title={view === "trash" ? "Delete permanently?" : "Move to trash?"}
           message={
             view === "trash"
-              ? `Permanently delete “${trashTarget.name}”. This cannot be undone.`
+              ? `Permanently delete “${trashTarget.name}”.`
               : `Move “${trashTarget.name}” to trash.`
           }
           confirmLabel={view === "trash" ? "Delete permanently" : "Move to trash"}
