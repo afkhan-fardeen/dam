@@ -21,13 +21,13 @@ export function writeSidebarCollapsed(collapsed: boolean) {
 }
 
 export function readViewMode(): ViewMode {
-  if (typeof window === "undefined") return "grid";
+  if (typeof window === "undefined") return "list";
   try {
     const v = window.localStorage.getItem(VIEW_MODE_KEY);
-    if (v === "list" || v === "photos") return v;
-    return "grid";
+    if (v === "list" || v === "grid" || v === "photos") return v;
+    return "list";
   } catch {
-    return "grid";
+    return "list";
   }
 }
 

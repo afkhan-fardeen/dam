@@ -2,16 +2,18 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  IconFolder,
-  IconKey,
-  IconLogout,
-  IconLayoutSidebar,
+  IconArrowLeft,
+  IconArrowRight,
+  IconArrowUp,
+  IconFolderPlus,
+  IconLayoutGrid,
+  IconLayoutList,
   IconMenu2,
-  IconSettings,
+  IconPencil,
+  IconTrash,
   IconUpload,
-  IconUser,
 } from "@tabler/icons-react";
 import { UploadForm } from "@/components/UploadForm";
 import { createClient } from "@/lib/supabase/client";
@@ -19,7 +21,6 @@ import {
   canEdit,
   type Space,
   type SpaceMembership,
-  type SpaceRole,
   type Profile,
 } from "@/lib/types";
 import { roleForSpace } from "@/lib/auth-client";
@@ -27,14 +28,13 @@ import { useDriveChrome } from "@/components/DriveChrome";
 import { UploadProgressPanel } from "@/components/UploadProgressPanel";
 import { PasswordField } from "@/components/PasswordField";
 import { CommandBar } from "@/components/CommandBar";
-import { TopBar } from "@/components/ui/TopBar";
-import { AppSidebar } from "@/components/ui/AppSidebar";
-import { Menu } from "@/components/ui/Menu";
+import { ExplorerNavPane } from "@/components/explorer/ExplorerNavPane";
+import { ExplorerDetails } from "@/components/explorer/ExplorerDetails";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { SearchField } from "@/components/ui/SearchField";
 import { navigateWithTransition } from "@/components/ui/useViewTransitionNavigate";
 import { readLastPlace } from "@/lib/lastPlace";
+import { readViewMode, writeViewMode } from "@/lib/uiPrefs";
 
 type DriveShellProps = {
   spaces: Space[];
@@ -60,40 +60,30 @@ export function DriveShell({
     uploadOpen,
     uploadSpaceId,
     requestNewFolder,
+    requestUpload,
     serverOnline,
     serverStatus,
+    explorer,
+    explorerActions,
+    viewMode,
+    setViewMode,
+    setExplorer,
   } = useDriveChrome();
 
-  const activeSlug = pathname.startsWith("/s/")
-    ? pathname.split("/")[2]
-    : null;
-
-  const activeSpace = spaces.find((s) => s.slug === activeSlug) ?? null;
-  const role: SpaceRole | null = activeSpace
-    ? roleForSpace(memberships, activeSpace.id, profile.is_admin)
-    : profile.is_admin
-      ? "editor"
-      : null;
-  const editable = canEdit(role, profile.is_admin);
-  const view = searchParams.get("view") || "all";
+  const view = searchParams.get("view") || "files";
   const onHome = pathname === "/";
   const onSearch = pathname === "/search";
   const onAdmin = pathname.startsWith("/admin");
   const onEntity = pathname.startsWith("/e/");
   const online = serverOnline;
-  const showHomeHero = onHome && view === "all";
 
   const defaultUploadSpaceId = useMemo(() => {
-    if (activeSpace && canEdit(role, profile.is_admin)) return activeSpace.id;
     for (const s of spaces) {
       const r = roleForSpace(memberships, s.id, profile.is_admin);
       if (canEdit(r, profile.is_admin)) return s.id;
     }
     return profile.is_admin && spaces[0] ? spaces[0].id : null;
-  }, [activeSpace, role, spaces, memberships, profile.is_admin]);
-
-  const canShellUpload =
-    Boolean(defaultUploadSpaceId) && online && view !== "trash";
+  }, [spaces, memberships, profile.is_admin]);
 
   const showTrash =
     profile.is_admin || memberships.some((m) => m.role === "editor");
@@ -104,34 +94,50 @@ export function DriveShell({
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const historyRef = useRef<{ stack: string[]; index: number }>({
+    stack: [],
+    index: -1,
+  });
+  const [histTick, setHistTick] = useState(0);
+  const skippingHistory = useRef(false);
 
   const showSidebar = !onEntity;
+  const showExplorerChrome = !onAdmin && !onEntity;
 
   useEffect(() => {
-    try {
-      setSidebarCollapsed(
-        window.localStorage.getItem("dam-sidebar-collapsed") === "1",
-      );
-    } catch {
-      /* ignore */
+    if (onSearch) {
+      setExplorer({
+        title: "Search",
+        crumbs: [{ id: null, label: "Search" }],
+        selected: null,
+        itemCount: 0,
+        canCreate: false,
+        canUpload: false,
+        canDelete: false,
+        canRename: false,
+        searchScopeLabel: "Company Files",
+        parentFolderId: null,
+      });
     }
-  }, []);
+  }, [onSearch, setExplorer]);
 
-  function toggleSidebarCollapsed() {
-    setSidebarCollapsed((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem(
-          "dam-sidebar-collapsed",
-          next ? "1" : "0",
-        );
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }
+  useEffect(() => {
+    if (onAdmin) {
+      setExplorer({
+        title: "Admin",
+        crumbs: [{ id: null, label: "Admin" }],
+        selected: null,
+        itemCount: 0,
+        canCreate: false,
+        canUpload: false,
+        canDelete: false,
+        canRename: false,
+        searchScopeLabel: "Company Files",
+        parentFolderId: null,
+      });
+    }
+  }, [onAdmin, setExplorer]);
 
   useEffect(() => {
     setQuery(searchParams.get("q") || "");
@@ -143,35 +149,76 @@ export function DriveShell({
     return () => window.clearTimeout(id);
   }, [actionToast]);
 
-  function uploadBlockedReason(): string | undefined {
-    if (serverStatus === "checking") return "Checking PC…";
-    if (!online) return "File server unavailable — uploads and previews may fail";
-    if (!defaultUploadSpaceId) return "No space to upload — ask an admin";
-    if (view === "trash") return "Leave trash to upload";
-    return undefined;
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  // Client history for back/forward
+  useEffect(() => {
+    const href = `${pathname}${searchParams.toString() ? `?${searchParams}` : ""}`;
+    const h = historyRef.current;
+    if (skippingHistory.current) {
+      skippingHistory.current = false;
+      if (h.index >= 0) h.stack[h.index] = href;
+      setHistTick((n) => n + 1);
+      return;
+    }
+    if (h.stack[h.index] === href) return;
+    h.stack = h.stack.slice(0, h.index + 1);
+    h.stack.push(href);
+    h.index = h.stack.length - 1;
+    setHistTick((n) => n + 1);
+  }, [pathname, searchParams]);
+
+  const canGoBack = historyRef.current.index > 0;
+  const canGoForward =
+    historyRef.current.index >= 0 &&
+    historyRef.current.index < historyRef.current.stack.length - 1;
+  void histTick;
+
+  const folderId = searchParams.get("folder");
+  const canGoUp =
+    showExplorerChrome &&
+    onHome &&
+    view !== "trash" &&
+    view !== "recent" &&
+    Boolean(folderId || explorer.parentFolderId);
+
+  function goHistory(delta: number) {
+    const h = historyRef.current;
+    const next = h.index + delta;
+    if (next < 0 || next >= h.stack.length) return;
+    skippingHistory.current = true;
+    h.index = next;
+    navigateWithTransition(router, h.stack[next]);
+    setHistTick((n) => n + 1);
+  }
+
+  function goUp() {
+    if (explorer.parentFolderId) {
+      navigateWithTransition(
+        router,
+        `/?folder=${encodeURIComponent(explorer.parentFolderId)}`,
+      );
+      return;
+    }
+    if (folderId) {
+      // parent unknown from URL — shell uses explorer.parentFolderId; fallback root
+      navigateWithTransition(router, "/");
+    }
   }
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) {
-      navigateWithTransition(
-        router,
-        activeSlug ? `/s/${activeSlug}` : "/",
-      );
+      navigateWithTransition(router, "/");
       return;
     }
     navigateWithTransition(
       router,
       `/search?q=${encodeURIComponent(trimmed)}`,
     );
-  }
-
-  function clearSearch() {
-    setQuery("");
-    if (onSearch) {
-      navigateWithTransition(router, "/");
-    }
   }
 
   async function signOut() {
@@ -200,18 +247,7 @@ export function DriveShell({
     router.refresh();
   }
 
-  const initials = useMemo(() => {
-    const name = profile.full_name || profile.email || "?";
-    return name
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() || "")
-      .join("");
-  }, [profile]);
-
   const shellUploadSpaceId = uploadSpaceId || defaultUploadSpaceId;
-  const uploadTitle = uploadBlockedReason();
-
   const editableDestinations = useMemo(
     () =>
       spaces
@@ -223,11 +259,10 @@ export function DriveShell({
     [spaces, memberships, profile.is_admin],
   );
 
-  const uploadSpace =
-    spaces.find((s) => s.id === shellUploadSpaceId) ?? null;
-  const uploadFolderId = activeSlug ? searchParams.get("folder") : null;
+  const uploadSpace = spaces.find((s) => s.id === shellUploadSpaceId) ?? null;
+  const uploadFolderId = onHome ? searchParams.get("folder") : null;
   const [uploadFolderName, setUploadFolderName] = useState<string | null>(null);
-  const [uploadSpaceName, setUploadSpaceName] = useState("Space");
+  const [uploadSpaceName, setUploadSpaceName] = useState("Company Files");
 
   useEffect(() => {
     if (!uploadOpen) return;
@@ -239,41 +274,52 @@ export function DriveShell({
     } else {
       setUploadFolderName(null);
     }
-    setUploadSpaceName(
-      (activeSlug && activeSpace?.name) ||
-        uploadSpace?.name ||
-        last?.spaceName ||
-        "Space",
-    );
-  }, [
-    uploadOpen,
-    uploadFolderId,
-    activeSlug,
-    activeSpace?.name,
-    uploadSpace?.name,
-  ]);
+    setUploadSpaceName(uploadSpace?.name || last?.spaceName || "Company Files");
+  }, [uploadOpen, uploadFolderId, uploadSpace?.name]);
 
-  const avatarTrigger = (
-    <span className="inline-flex items-center justify-center h-8 w-8 rounded-[6px] border border-[rgba(60,60,67,0.12)] bg-[#fafafa] text-[11px] font-medium text-[var(--ink)]">
-      {initials || <IconUser size={14} />}
-    </span>
-  );
+  const identityTitle = showExplorerChrome
+    ? explorer.title
+    : onAdmin
+      ? "Admin"
+      : onSearch
+        ? "Search"
+        : "Company Files";
 
-  const showTopSearch = !onAdmin && !onEntity;
+  const statusText = explorer.selected
+    ? `1 item selected`
+    : `${explorer.itemCount} item${explorer.itemCount === 1 ? "" : "s"}`;
 
-  // Close mobile drawer on route change only — not on folder query updates.
-  useEffect(() => {
-    setSidebarOpen(false);
-  }, [pathname]);
+  const canNew = showExplorerChrome && explorer.canCreate && view !== "trash";
+  const canUp =
+    showExplorerChrome &&
+    explorer.canUpload &&
+    online &&
+    view !== "trash";
+  const canDel = showExplorerChrome && explorer.canDelete && explorer.selected;
+  const canRen =
+    showExplorerChrome &&
+    explorer.canRename &&
+    explorer.selected &&
+    view !== "trash";
+
+  function onUploadClick() {
+    if (!canUp) {
+      if (!online) setActionToast("File server unavailable");
+      else setActionToast("Upload not available here");
+      return;
+    }
+    // Prefer workspace file picker (flat drive); modal if spaces exist
+    if (shellUploadSpaceId) {
+      openUpload(shellUploadSpaceId);
+    } else {
+      requestUpload();
+    }
+  }
 
   return (
-    <div
-      className={`app-shell min-h-screen flex flex-col relative bg-[var(--bg)]${
-        showSidebar ? " has-sidebar" : ""
-      }${showSidebar && sidebarCollapsed ? " sidebar-collapsed" : ""}`}
-    >
+    <div className="xp-shell">
       {viewingAs ? (
-        <div className="shrink-0 surface mx-3 mt-2 px-4 py-2 flex items-center justify-between gap-3 type-body">
+        <div className="shrink-0 px-3 py-2 flex items-center justify-between gap-3 text-[12px] bg-[var(--win-selected)] border-b border-[var(--win-selected-border)]">
           <span>
             Viewing as {viewingAs.full_name || viewingAs.email || "user"}
           </span>
@@ -283,18 +329,158 @@ export function DriveShell({
         </div>
       ) : null}
 
-      <div className="app-body flex-1 min-h-0 flex relative">
+      <div className="xp-identity">
         {showSidebar ? (
-          <AppSidebar
-            spaces={spaces}
-            showTrash={showTrash}
+          <button
+            type="button"
+            className="xp-nav-btn xp-mobile-nav-btn"
+            aria-label="Open navigation"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <IconMenu2 size={16} />
+          </button>
+        ) : null}
+        <div className="xp-identity-title">{identityTitle}</div>
+        {onAdmin ? (
+          <Link
+            href="/"
+            className="ml-auto text-[12px] text-[var(--win-accent)] hover:underline"
+          >
+            Back to files
+          </Link>
+        ) : null}
+      </div>
+
+      {showExplorerChrome ? (
+        <div className="xp-cmdbar">
+          <button
+            type="button"
+            className="xp-cmd"
+            disabled={!canNew}
+            title={canNew ? "New folder" : "Cannot create here"}
+            onClick={() => {
+              if (!canNew) return;
+              requestNewFolder();
+            }}
+          >
+            <IconFolderPlus size={14} stroke={1.75} />
+            New
+          </button>
+          <button
+            type="button"
+            className="xp-cmd"
+            disabled={!canUp}
+            title={canUp ? "Upload" : "Upload unavailable"}
+            onClick={onUploadClick}
+          >
+            <IconUpload size={14} stroke={1.75} />
+            Upload
+          </button>
+          <span className="xp-cmd-sep" aria-hidden />
+          <button
+            type="button"
+            className="xp-cmd"
+            disabled={!canDel}
+            title={
+              view === "trash" ? "Delete permanently" : "Move to Recycle Bin"
+            }
+            onClick={() => explorerActions?.deleteSelection()}
+          >
+            <IconTrash size={14} stroke={1.75} />
+            Delete
+          </button>
+          <button
+            type="button"
+            className="xp-cmd"
+            disabled={!canRen}
+            title="Rename"
+            onClick={() => explorerActions?.renameSelection()}
+          >
+            <IconPencil size={14} stroke={1.75} />
+            Rename
+          </button>
+        </div>
+      ) : null}
+
+      {showExplorerChrome ? (
+        <div className="xp-addr">
+          <button
+            type="button"
+            className="xp-nav-btn"
+            disabled={!canGoBack}
+            aria-label="Back"
+            onClick={() => goHistory(-1)}
+          >
+            <IconArrowLeft size={15} />
+          </button>
+          <button
+            type="button"
+            className="xp-nav-btn"
+            disabled={!canGoForward}
+            aria-label="Forward"
+            onClick={() => goHistory(1)}
+          >
+            <IconArrowRight size={15} />
+          </button>
+          <button
+            type="button"
+            className="xp-nav-btn"
+            disabled={!canGoUp}
+            aria-label="Up"
+            onClick={goUp}
+          >
+            <IconArrowUp size={15} />
+          </button>
+          <div className="xp-breadcrumb" aria-label="Address">
+            {explorer.crumbs.map((c, i) => {
+              const last = i === explorer.crumbs.length - 1;
+              return (
+                <span key={`${c.id ?? "root"}-${i}`} className="inline-flex items-center gap-1 min-w-0">
+                  {i > 0 ? (
+                    <span className="xp-breadcrumb-sep">›</span>
+                  ) : null}
+                  {last ? (
+                    <span className="xp-breadcrumb-current">{c.label}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        navigateWithTransition(
+                          router,
+                          c.id
+                            ? `/?folder=${encodeURIComponent(c.id)}`
+                            : "/",
+                        )
+                      }
+                    >
+                      {c.label}
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+          <form onSubmit={submitSearch}>
+            <input
+              className="xp-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={`Search ${explorer.searchScopeLabel}`}
+              aria-label="Search"
+            />
+          </form>
+        </div>
+      ) : null}
+
+      <div className="xp-body">
+        {showSidebar ? (
+          <ExplorerNavPane
             open={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
-            mode={onAdmin ? "admin" : "employee"}
-            collapsed={sidebarCollapsed}
-            onToggleCollapsed={toggleSidebarCollapsed}
             profile={profile}
             serverStatus={serverStatus}
+            showTrash={showTrash}
+            mode={onAdmin ? "admin" : "employee"}
             onOpenSettings={() => {
               setPasswordOpen(true);
               setPasswordMsg(null);
@@ -303,140 +489,59 @@ export function DriveShell({
           />
         ) : null}
 
-        <div className="app-main flex-1 min-w-0 min-h-0 flex flex-col">
-          <TopBar
-            brandLabel=""
-            brandHref="/"
-            showClock
-            leading={
-              showSidebar ? (
-                <>
-                  <button
-                    type="button"
-                    className="topbar-menu-btn"
-                    aria-label="Open navigation"
-                    onClick={() => setSidebarOpen(true)}
-                  >
-                    <IconMenu2 size={20} stroke={1.75} />
-                  </button>
-                  <button
-                    type="button"
-                    className="topbar-collapse-btn"
-                    aria-label={
-                      sidebarCollapsed
-                        ? "Expand sidebar"
-                        : "Collapse sidebar"
-                    }
-                    title={
-                      sidebarCollapsed
-                        ? "Expand sidebar"
-                        : "Collapse sidebar"
-                    }
-                    onClick={toggleSidebarCollapsed}
-                  >
-                    <IconLayoutSidebar size={18} stroke={1.75} />
-                  </button>
-                </>
-              ) : undefined
-            }
-            search={
-              showTopSearch ? (
-                <SearchField
-                  value={query}
-                  onChange={setQuery}
-                  onSubmit={submitSearch}
-                  onClear={clearSearch}
-                  placeholder="Search files and folders…"
-                  showCmdK={!showHomeHero}
-                  slim
-                />
-              ) : null
-            }
-            trailing={
-              <div className="topbar-actions">
-                {!onAdmin && !onEntity ? (
-                  <>
-                    {activeSlug ? (
-                      <button
-                        type="button"
-                        className={`topbar-action-btn${!editable ? " is-disabled" : ""}`}
-                        aria-disabled={!editable}
-                        title={editable ? "New folder" : "View only"}
-                        onClick={() => {
-                          if (!editable) {
-                            setActionToast("View only — ask an editor");
-                            return;
-                          }
-                          requestNewFolder();
-                        }}
-                      >
-                        <IconFolder size={16} stroke={1.75} />
-                        <span className="topbar-action-label">New folder</span>
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className={`topbar-action-btn topbar-action-btn--primary${
-                        !(canShellUpload && (!activeSlug || editable))
-                          ? " is-disabled"
-                          : ""
-                      }`}
-                      aria-disabled={
-                        !(canShellUpload && (!activeSlug || editable))
-                      }
-                      title={uploadTitle || "Upload"}
-                      onClick={() => {
-                        if (!(canShellUpload && (!activeSlug || editable))) {
-                          if (uploadTitle) setActionToast(uploadTitle);
-                          return;
-                        }
-                        openUpload(activeSpace?.id ?? defaultUploadSpaceId);
-                      }}
-                    >
-                      <IconUpload size={16} stroke={1.75} />
-                      <span className="topbar-action-label">Upload</span>
-                    </button>
-                  </>
-                ) : null}
-                {!showSidebar ? (
-                  <Menu trigger={avatarTrigger}>
-                    {profile.is_admin ? (
-                      <Link href="/admin/spaces" className="menu-row">
-                        <IconSettings size={15} /> Admin
-                      </Link>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="menu-row"
-                      onClick={() => {
-                        setPasswordOpen(true);
-                        setPasswordMsg(null);
-                      }}
-                    >
-                      <IconKey size={15} /> Settings
-                    </button>
-                    <div className="card-divider" />
-                    <button
-                      type="button"
-                      className="menu-row menu-row-danger"
-                      onClick={() => void signOut()}
-                    >
-                      <IconLogout size={15} /> Sign out
-                    </button>
-                  </Menu>
-                ) : null}
-              </div>
-            }
-          />
-
-          <main
-            className={`flat-content-root flex-1 min-h-0 min-w-0 ${
-              showHomeHero ? "overflow-auto" : "overflow-auto pb-6 px-4 sm:px-6"
-            }`}
+        <div className="xp-main">
+          <div
+            className={`xp-content${onAdmin || onSearch ? " p-4 sm:p-6" : ""}`}
           >
             {children}
-          </main>
+          </div>
+          {showExplorerChrome ? (
+            <div className="xp-statusbar">
+              <span>{statusText}</span>
+              <div className="xp-view-toggle" role="group" aria-label="View">
+                <button
+                  type="button"
+                  className={viewMode === "list" ? "is-active" : ""}
+                  title="List"
+                  aria-pressed={viewMode === "list"}
+                  onClick={() => {
+                    setViewMode("list");
+                    writeViewMode("list");
+                  }}
+                >
+                  <IconLayoutList size={14} />
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === "grid" ? "is-active" : ""}
+                  title="Grid"
+                  aria-pressed={viewMode === "grid"}
+                  onClick={() => {
+                    setViewMode("grid");
+                    writeViewMode("grid");
+                  }}
+                >
+                  <IconLayoutGrid size={14} />
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
+
+        {showExplorerChrome && explorer.selected ? (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <ExplorerDetails
+              node={explorer.selected}
+              canEditTags={
+                Boolean(explorer.canCreate || explorer.selected.can_edit) &&
+                view !== "trash"
+              }
+            />
+          </div>
+        ) : null}
       </div>
 
       {actionToast ? (
@@ -453,21 +558,15 @@ export function DriveShell({
       <CommandBar
         spaces={spaces}
         isAdmin={profile.is_admin}
-        canUpload={canShellUpload}
-        onUpload={() => openUpload(defaultUploadSpaceId)}
+        canUpload={canUp}
+        onUpload={onUploadClick}
       />
 
       {uploadOpen && shellUploadSpaceId ? (
         <UploadForm
           spaceId={shellUploadSpaceId}
           spaceName={uploadSpaceName}
-          spaceSlug={
-            uploadSpace?.slug ||
-            activeSpace?.slug ||
-            editableDestinations.find((d) => d.id === shellUploadSpaceId)
-              ?.slug ||
-            ""
-          }
+          spaceSlug={uploadSpace?.slug || ""}
           folderId={uploadFolderId}
           folderName={uploadFolderName}
           destinationOptions={editableDestinations}

@@ -14,7 +14,8 @@ import {
   type ServerStatus,
 } from "@/lib/useFileServerHealth";
 import { uploadFsFileWithProgress } from "@/lib/fsUpload";
-import type { Folder } from "@/lib/types";
+import type { Folder, FsNode } from "@/lib/types";
+import type { ViewMode } from "@/lib/uiPrefs";
 
 export type TransferJob = {
   id: string;
@@ -23,7 +24,6 @@ export type TransferJob = {
   kind: "upload" | "download" | "trash" | "delete" | "restore";
   status: "queued" | "uploading" | "downloading" | "saving" | "done" | "error";
   error?: string;
-  /** Where to open after a successful upload */
   viewHref?: string;
   viewLabel?: string;
 };
@@ -43,7 +43,6 @@ export type UploadEnqueueItem = {
   viewLabel?: string;
 };
 
-/** Registered by DriveWorkspace so the global sidebar can show the folder tree */
 export type PlaceNavState = {
   folders: Folder[];
   currentFolderId: string | null;
@@ -51,38 +50,71 @@ export type PlaceNavState = {
   onPrefetchFolder?: (folderId: string | null) => void;
 };
 
+export type ExplorerCrumb = { id: string | null; label: string };
+
+export type ExplorerSurface = {
+  title: string;
+  crumbs: ExplorerCrumb[];
+  selected: FsNode | null;
+  itemCount: number;
+  canCreate: boolean;
+  canUpload: boolean;
+  canDelete: boolean;
+  canRename: boolean;
+  searchScopeLabel: string;
+  parentFolderId: string | null;
+};
+
+export type ExplorerActions = {
+  deleteSelection: () => void;
+  renameSelection: () => void;
+};
+
 type QueuedUpload = UploadEnqueueItem & { jobId: string };
 
 type DriveChromeContextValue = {
   uploadRequestId: number;
   folderRequestId: number;
-  /** Legacy bump — prefer openUpload for shell modal */
   requestUpload: () => void;
   requestNewFolder: () => void;
-  /** Shell-level upload modal */
   uploadOpen: boolean;
   uploadSpaceId: string | null;
   openUpload: (spaceId?: string | null) => void;
   closeUpload: () => void;
-  /** Single PC health source for TopBar + Upload */
   serverStatus: ServerStatus;
   serverOnline: boolean;
   jobs: TransferJob[];
   upsertJob: (job: TransferJob) => void;
   removeJob: (id: string) => void;
   clearSettledJobs: () => void;
-  /** Persistent upload queue — survives modal close + navigation */
   enqueueUploads: (items: UploadEnqueueItem[]) => void;
-  /**
-   * Bumps when library content changes (uploads, new folders, etc.).
-   * Space/file views subscribe and soft-reload — no full page refresh.
-   */
   libraryEpoch: number;
   notifyLibraryChange: () => void;
   transferPanelOpen: boolean;
   setTransferPanelOpen: (open: boolean) => void;
   placeNav: PlaceNavState | null;
   setPlaceNav: (nav: PlaceNavState | null) => void;
+  /** Explorer chrome shared between shell + workspace */
+  explorer: ExplorerSurface;
+  setExplorer: (patch: Partial<ExplorerSurface>) => void;
+  setSelectedNode: (node: FsNode | null) => void;
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+  registerExplorerActions: (actions: ExplorerActions | null) => void;
+  explorerActions: ExplorerActions | null;
+};
+
+const defaultExplorer: ExplorerSurface = {
+  title: "Company Files",
+  crumbs: [{ id: null, label: "Company Files" }],
+  selected: null,
+  itemCount: 0,
+  canCreate: false,
+  canUpload: false,
+  canDelete: false,
+  canRename: false,
+  searchScopeLabel: "Company Files",
+  parentFolderId: null,
 };
 
 const DriveChromeContext = createContext<DriveChromeContextValue | null>(null);
@@ -96,6 +128,12 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
   const [placeNav, setPlaceNav] = useState<PlaceNavState | null>(null);
   const [transferPanelOpen, setTransferPanelOpen] = useState(false);
   const [libraryEpoch, setLibraryEpoch] = useState(0);
+  const [explorer, setExplorerState] = useState<ExplorerSurface>(defaultExplorer);
+  const [viewMode, setViewModeState] = useState<ViewMode>("list");
+  const explorerActionsRef = useRef<ExplorerActions | null>(null);
+  const [explorerActions, setExplorerActions] = useState<ExplorerActions | null>(
+    null,
+  );
   const serverStatus = useFileServerHealth();
 
   const queueRef = useRef<QueuedUpload[]>([]);
@@ -105,10 +143,34 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
     setLibraryEpoch((n) => n + 1);
   }, []);
 
+  const setExplorer = useCallback((patch: Partial<ExplorerSurface>) => {
+    setExplorerState((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const setSelectedNode = useCallback((node: FsNode | null) => {
+    setExplorerState((prev) => ({
+      ...prev,
+      selected: node,
+      canDelete: node ? prev.canDelete : false,
+      canRename: node ? prev.canRename : false,
+    }));
+  }, []);
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    setViewModeState(mode === "photos" ? "grid" : mode);
+  }, []);
+
+  const registerExplorerActions = useCallback(
+    (actions: ExplorerActions | null) => {
+      explorerActionsRef.current = actions;
+      setExplorerActions(actions);
+    },
+    [],
+  );
+
   const openUpload = useCallback((spaceId?: string | null) => {
     if (spaceId) setUploadSpaceId(spaceId);
     setUploadOpen(true);
-    setUploadRequestId((n) => n + 1);
   }, []);
 
   const closeUpload = useCallback(() => {
@@ -117,8 +179,8 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const requestUpload = useCallback(() => {
-    openUpload();
-  }, [openUpload]);
+    setUploadRequestId((n) => n + 1);
+  }, []);
 
   const requestNewFolder = useCallback(() => {
     setFolderRequestId((n) => n + 1);
@@ -276,6 +338,13 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       setTransferPanelOpen,
       placeNav,
       setPlaceNav,
+      explorer,
+      setExplorer,
+      setSelectedNode,
+      viewMode,
+      setViewMode,
+      registerExplorerActions,
+      explorerActions,
     }),
     [
       uploadRequestId,
@@ -296,6 +365,13 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       notifyLibraryChange,
       transferPanelOpen,
       placeNav,
+      explorer,
+      setExplorer,
+      setSelectedNode,
+      viewMode,
+      setViewMode,
+      registerExplorerActions,
+      explorerActions,
     ],
   );
 

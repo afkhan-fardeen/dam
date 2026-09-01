@@ -5,19 +5,22 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   IconDots,
   IconDownload,
-  IconFolder,
-  IconFolderPlus,
   IconStar,
   IconStarFilled,
   IconTrash,
-  IconUpload,
   IconX,
 } from "@tabler/icons-react";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { FolderGlyph } from "@/components/explorer/FolderGlyph";
 import { uploadFsFileWithProgress } from "@/lib/fsUpload";
 import type { FsNode } from "@/lib/types";
-import { getTagChipStyles } from "@/lib/categories";
+import {
+  fileTypeLabel,
+  formatBytes,
+  formatModified,
+} from "@/lib/explorerFormat";
+import { readViewMode } from "@/lib/uiPrefs";
 
 type Props = {
   isAdmin: boolean;
@@ -38,6 +41,12 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     libraryEpoch,
     setPlaceNav,
     notifyLibraryChange,
+    setExplorer,
+    setSelectedNode,
+    explorer,
+    viewMode,
+    setViewMode,
+    registerExplorerActions,
   } = useDriveChrome();
 
   const [nodes, setNodes] = useState<FsNode[]>([]);
@@ -56,9 +65,19 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastUploadReq = useRef(0);
   const lastFolderReq = useRef(0);
+  const selectedRef = useRef<FsNode | null>(null);
 
-  const editable = isAdmin || parentCanEdit || view === "trash";
+  const editable = isAdmin || parentCanEdit;
   const inTrash = view === "trash";
+
+  useEffect(() => {
+    selectedRef.current = explorer.selected;
+  }, [explorer.selected]);
+
+  useEffect(() => {
+    const stored = readViewMode();
+    setViewMode(stored === "photos" ? "grid" : stored);
+  }, [setViewMode]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +126,47 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     libraryEpochSeen.current = libraryEpoch;
     void load();
   }, [libraryEpoch, load]);
+
+  useEffect(() => {
+    const current = ancestors[ancestors.length - 1] ?? null;
+    const title = inTrash
+      ? "Recycle Bin"
+      : current?.name || "Company Files";
+    const crumbs = inTrash
+      ? [{ id: null, label: "Recycle Bin" }]
+      : [
+          { id: null, label: "Company Files" },
+          ...ancestors.map((a) => ({ id: a.id, label: a.name })),
+        ];
+    const parentFolderId =
+      ancestors.length > 1
+        ? ancestors[ancestors.length - 2]!.id
+        : ancestors.length === 1
+          ? null
+          : null;
+
+    setExplorer({
+      title,
+      crumbs,
+      itemCount: nodes.length,
+      canCreate: editable && !inTrash,
+      canUpload: editable && !inTrash && serverOnline,
+      searchScopeLabel: title,
+      parentFolderId: folderId ? parentFolderId : null,
+    });
+  }, [
+    ancestors,
+    editable,
+    folderId,
+    inTrash,
+    nodes.length,
+    serverOnline,
+    setExplorer,
+  ]);
+
+  useEffect(() => {
+    setSelectedNode(null);
+  }, [folderId, view, setSelectedNode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,6 +225,31 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     if (id) params.set("folder", id);
     router.push(`/?${params.toString()}`);
   }
+
+  function selectNode(node: FsNode) {
+    setExplorer({
+      selected: node,
+      canDelete: editable || inTrash,
+      canRename: editable && !inTrash,
+    });
+  }
+
+  useEffect(() => {
+    registerExplorerActions({
+      deleteSelection: () => {
+        const n = selectedRef.current;
+        if (!n) return;
+        setTrashTarget(n);
+      },
+      renameSelection: () => {
+        const n = selectedRef.current;
+        if (!n || inTrash || !editable) return;
+        setRenameValue(n.name);
+        setRenameNode(n);
+      },
+    });
+    return () => registerExplorerActions(null);
+  }, [registerExplorerActions, inTrash, editable]);
 
   async function createFolder() {
     const name = newFolderName.trim();
@@ -246,6 +331,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
       return;
     }
     setRenameNode(null);
+    setSelectedNode(null);
     await load();
   }
 
@@ -263,6 +349,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
       return;
     }
     setTrashTarget(null);
+    setSelectedNode(null);
     notifyLibraryChange();
     await load();
   }
@@ -278,6 +365,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
       setError(json.error || "Restore failed");
       return;
     }
+    setSelectedNode(null);
     notifyLibraryChange();
     await load();
   }
@@ -337,15 +425,45 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
       });
   }
 
-  const title = inTrash
-    ? "Trash"
-    : ancestors.length
-      ? ancestors.map((a) => a.name).join(" / ")
-      : "All files";
+  const selectedId = explorer.selected?.id ?? null;
+  const isGrid = viewMode === "grid";
+
+  function onItemClick(e: React.MouseEvent, node: FsNode) {
+    e.stopPropagation();
+    selectNode(node);
+  }
+
+  function onItemDoubleClick(node: FsNode) {
+    if (node.node_type === "folder" && !inTrash) openFolder(node.id);
+  }
+
+  function renderIcon(node: FsNode, size = 16) {
+    if (node.node_type === "folder") return <FolderGlyph size={size} />;
+    if (node.has_thumbnail) {
+      return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`/api/fs/media/thumbnail/${node.id}`}
+          alt=""
+          width={size}
+          height={size}
+          className="rounded object-cover"
+          style={{ width: size, height: size }}
+        />
+      );
+    }
+    return (
+      <div
+        className="xp-file-block"
+        style={{ width: size, height: Math.round(size * 1.15) }}
+      />
+    );
+  }
 
   return (
     <div
-      className="flex flex-col gap-4 p-5"
+      className="h-full min-h-0 flex flex-col"
+      onClick={() => setSelectedNode(null)}
       onDragOver={(e) => {
         e.preventDefault();
         if (editable && !inTrash) setDragging(true);
@@ -368,143 +486,108 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
         }}
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-sm text-base-content/60">
-            <button type="button" className="link link-hover" onClick={() => openFolder(null)}>
-              Drive
-            </button>
-            {ancestors.map((a) => (
-              <span key={a.id}>
-                {" / "}
-                <button
-                  type="button"
-                  className="link link-hover"
-                  onClick={() => openFolder(a.id)}
-                >
-                  {a.name}
-                </button>
-              </span>
-            ))}
-          </div>
-          <h1 className="text-xl font-semibold">{title}</h1>
-        </div>
-        {editable && !inTrash ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                setNewFolderOpen(true);
-                setNewFolderName("");
-              }}
-            >
-              <IconFolderPlus size={16} /> New folder
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-neutral"
-              disabled={!serverOnline}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <IconUpload size={16} /> Upload
-            </button>
-          </div>
-        ) : null}
-      </div>
-
       {error ? (
-        <div className="alert alert-error text-sm">
-          <span>{error}</span>
-          <button type="button" className="btn btn-ghost btn-xs" onClick={() => setError(null)}>
+        <div className="mx-3 mt-2 flex items-center gap-2 rounded border border-[var(--danger)] bg-[#fff5f4] px-3 py-2 text-[12px]">
+          <span className="flex-1">{error}</span>
+          <button type="button" className="xp-nav-btn" onClick={() => setError(null)}>
             <IconX size={14} />
           </button>
         </div>
       ) : null}
 
       {dragging ? (
-        <div className="rounded-box border-2 border-dashed border-primary p-8 text-center text-sm">
+        <div className="m-3 rounded border-2 border-dashed border-[var(--win-accent)] p-8 text-center text-[13px] text-[var(--win-accent)]">
           Drop files to upload
         </div>
       ) : null}
 
       {loading ? (
-        <div className="text-sm text-base-content/60">Loading…</div>
+        <div className="xp-empty">Loading…</div>
       ) : nodes.length === 0 ? (
-        <div className="rounded-box border border-base-300/60 bg-base-100 p-10 text-center text-sm text-base-content/60">
+        <div className="xp-empty">
           {inTrash
-            ? "Trash is empty."
-            : "This folder is empty. Create a folder or upload files."}
+            ? "Recycle Bin is empty."
+            : "This folder is empty. Use New or Upload to add items."}
+        </div>
+      ) : isGrid ? (
+        <div className="xp-grid">
+          {nodes.map((node) => (
+            <button
+              key={node.id}
+              type="button"
+              className={`xp-tile${selectedId === node.id ? " is-selected" : ""}`}
+              onClick={(e) => onItemClick(e, node)}
+              onDoubleClick={() => onItemDoubleClick(node)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                selectNode(node);
+                setMenuNode(node);
+              }}
+            >
+              <div className="xp-tile-icon">{renderIcon(node, 40)}</div>
+              <div className="xp-tile-name">{node.name}</div>
+            </button>
+          ))}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-box border border-base-300/60">
-          <table className="table table-sm">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Size</th>
-                <th />
+        <table className="xp-list">
+          <thead>
+            <tr>
+              <th style={{ width: "42%" }}>Name</th>
+              <th style={{ width: "22%" }}>Date modified</th>
+              <th style={{ width: "18%" }}>Type</th>
+              <th style={{ width: "12%" }}>Size</th>
+              <th style={{ width: "6%" }} />
+            </tr>
+          </thead>
+          <tbody>
+            {nodes.map((node) => (
+              <tr
+                key={node.id}
+                className={`xp-row${selectedId === node.id ? " is-selected" : ""}`}
+                onClick={(e) => onItemClick(e, node)}
+                onDoubleClick={() => onItemDoubleClick(node)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  selectNode(node);
+                  setMenuNode(node);
+                }}
+              >
+                <td>
+                  <span className="xp-name-cell">
+                    {renderIcon(node, 16)}
+                    <span>{node.name}</span>
+                  </span>
+                </td>
+                <td>{formatModified(node.updated_at || node.created_at)}</td>
+                <td>
+                  {fileTypeLabel(node.node_type, node.mime_type, node.name)}
+                </td>
+                <td>
+                  {node.node_type === "folder"
+                    ? ""
+                    : formatBytes(node.size_bytes)}
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="xp-nav-btn"
+                    aria-label="More"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectNode(node);
+                      setMenuNode(node);
+                    }}
+                  >
+                    <IconDots size={14} />
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {nodes.map((node) => (
-                <tr key={node.id} className="hover">
-                  <td>
-                    <button
-                      type="button"
-                      className="link link-hover inline-flex items-center gap-2 font-medium"
-                      onDoubleClick={() => {
-                        if (node.node_type === "folder" && !inTrash) {
-                          openFolder(node.id);
-                        }
-                      }}
-                      onClick={() => {
-                        if (node.node_type === "folder" && !inTrash) {
-                          openFolder(node.id);
-                        }
-                      }}
-                    >
-                      {node.node_type === "folder" ? (
-                        <IconFolder size={16} className="text-[#A7C3FA]" />
-                      ) : null}
-                      {node.name}
-                    </button>
-                    {node.tags?.length ? (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {node.tags.slice(0, 3).map((t) => (
-                          <span
-                            key={t.id}
-                            className="badge badge-ghost badge-sm"
-                            style={getTagChipStyles(t.name).style}
-                          >
-                            {t.name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td>
-                    {node.size_bytes != null
-                      ? `${Math.round(node.size_bytes / 1024)} KB`
-                      : "—"}
-                  </td>
-                  <td className="text-right">
-                    <div className="dropdown dropdown-end">
-                      <button
-                        type="button"
-                        tabIndex={0}
-                        className="btn btn-ghost btn-xs"
-                        onClick={() => setMenuNode(node)}
-                      >
-                        <IconDots size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       )}
 
       {menuNode ? (
@@ -513,15 +596,31 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
             <ul className="menu">
               {menuNode.node_type === "file" && !inTrash ? (
                 <li>
-                  <button type="button" onClick={() => { downloadNode(menuNode); setMenuNode(null); }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadNode(menuNode);
+                      setMenuNode(null);
+                    }}
+                  >
                     <IconDownload size={16} /> Download
                   </button>
                 </li>
               ) : null}
-              {menuNode.node_type === "file" && !inTrash ? (
+              {!inTrash ? (
                 <li>
-                  <button type="button" onClick={() => { void toggleFavorite(menuNode); setMenuNode(null); }}>
-                    {menuNode.favorited ? <IconStarFilled size={16} /> : <IconStar size={16} />}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void toggleFavorite(menuNode);
+                      setMenuNode(null);
+                    }}
+                  >
+                    {menuNode.favorited ? (
+                      <IconStarFilled size={16} />
+                    ) : (
+                      <IconStar size={16} />
+                    )}
                     {menuNode.favorited ? "Unstar" : "Star"}
                   </button>
                 </li>
@@ -555,12 +654,18 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
               ) : null}
               {inTrash && editable ? (
                 <li>
-                  <button type="button" onClick={() => { void restoreNode(menuNode); setMenuNode(null); }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void restoreNode(menuNode);
+                      setMenuNode(null);
+                    }}
+                  >
                     Restore
                   </button>
                 </li>
               ) : null}
-              {editable ? (
+              {editable || inTrash ? (
                 <li>
                   <button
                     type="button"
@@ -577,13 +682,19 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
               ) : null}
             </ul>
             <form method="dialog" className="px-2 pb-2">
-              <button type="button" className="btn btn-ghost btn-sm w-full" onClick={() => setMenuNode(null)}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm w-full"
+                onClick={() => setMenuNode(null)}
+              >
                 Close
               </button>
             </form>
           </div>
           <form method="dialog" className="modal-backdrop">
-            <button type="button" onClick={() => setMenuNode(null)}>close</button>
+            <button type="button" onClick={() => setMenuNode(null)}>
+              close
+            </button>
           </form>
         </dialog>
       ) : null}
@@ -603,10 +714,18 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
               }}
             />
             <div className="modal-action">
-              <button type="button" className="btn" onClick={() => setNewFolderOpen(false)}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setNewFolderOpen(false)}
+              >
                 Cancel
               </button>
-              <button type="button" className="btn btn-neutral" onClick={() => void createFolder()}>
+              <button
+                type="button"
+                className="btn btn-neutral"
+                onClick={() => void createFolder()}
+              >
                 Create
               </button>
             </div>
@@ -628,10 +747,18 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
               }}
             />
             <div className="modal-action">
-              <button type="button" className="btn" onClick={() => setRenameNode(null)}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setRenameNode(null)}
+              >
                 Cancel
               </button>
-              <button type="button" className="btn btn-neutral" onClick={() => void saveRename()}>
+              <button
+                type="button"
+                className="btn btn-neutral"
+                onClick={() => void saveRename()}
+              >
                 Save
               </button>
             </div>
@@ -648,11 +775,11 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
 
       {trashTarget ? (
         <ConfirmModal
-          title={inTrash ? "Delete permanently?" : "Move to trash?"}
+          title={inTrash ? "Delete permanently?" : "Move to Recycle Bin?"}
           message={
             inTrash
               ? `Permanently delete “${trashTarget.name}”. This cannot be undone.`
-              : `Move “${trashTarget.name}” to trash.`
+              : `Move “${trashTarget.name}” to Recycle Bin.`
           }
           confirmLabel={inTrash ? "Delete permanently" : "Move to trash"}
           danger
@@ -715,7 +842,10 @@ function FolderPermissionsModal({
       setError(json.error || "Failed");
       return;
     }
-    setRows((prev) => [...prev.filter((r) => r.principal_type !== "everyone"), json.permission]);
+    setRows((prev) => [
+      ...prev.filter((r) => r.principal_type !== "everyone"),
+      json.permission,
+    ]);
   }
 
   async function addGroup() {
@@ -756,15 +886,25 @@ function FolderPermissionsModal({
         {error ? <p className="mt-2 text-sm text-error">{error}</p> : null}
         <ul className="mt-3 space-y-1 text-sm">
           {rows.length === 0 ? (
-            <li className="text-base-content/50">No grants yet (creator + admins only).</li>
+            <li className="text-base-content/50">
+              No grants yet (creator + admins only).
+            </li>
           ) : (
             rows.map((r) => (
-              <li key={r.id} className="flex items-center justify-between gap-2">
+              <li
+                key={r.id}
+                className="flex items-center justify-between gap-2"
+              >
                 <span>
                   {r.principal_type}
-                  {r.principal_id ? ` · ${r.principal_id.slice(0, 8)}…` : ""} · {r.level}
+                  {r.principal_id ? ` · ${r.principal_id.slice(0, 8)}…` : ""} ·{" "}
+                  {r.level}
                 </span>
-                <button type="button" className="btn btn-ghost btn-xs" onClick={() => void remove(r.id)}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => void remove(r.id)}
+                >
                   Remove
                 </button>
               </li>
@@ -784,7 +924,11 @@ function FolderPermissionsModal({
               <option value="edit">edit</option>
             </select>
           </label>
-          <button type="button" className="btn btn-sm" onClick={() => void addEveryone()}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => void addEveryone()}
+          >
             Add Everyone
           </button>
           {groups.length > 0 ? (
@@ -800,7 +944,11 @@ function FolderPermissionsModal({
                   </option>
                 ))}
               </select>
-              <button type="button" className="btn btn-sm" onClick={() => void addGroup()}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => void addGroup()}
+              >
                 Add group
               </button>
             </>
