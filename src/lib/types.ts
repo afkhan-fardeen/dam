@@ -152,6 +152,43 @@ export type AssetAttributeValue = {
   attribute_def?: AttributeDef | null;
 };
 
+export type FsNodeType = "file" | "folder";
+
+export type FsNode = {
+  id: string;
+  space_id: string;
+  parent_id: string | null;
+  node_type: FsNodeType;
+  name: string;
+  relative_path: string;
+  size_bytes: number | null;
+  mime_type: string | null;
+  content_hash: string | null;
+  description: string | null;
+  created_by: string | null;
+  uploaded_by: string | null;
+  has_thumbnail: boolean;
+  passcode_enabled?: boolean;
+  tags_text?: string | null;
+  last_synced_at: string | null;
+  is_deleted: boolean;
+  deleted_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  tags?: Tag[];
+  favorited?: boolean;
+  locked?: boolean;
+};
+
+export type StorageStatus = {
+  id: number;
+  total_bytes: number;
+  used_bytes: number;
+  available_bytes: number;
+  storage_root: string;
+  checked_at: string;
+};
+
 export function canEdit(role: SpaceRole | null, isAdmin: boolean): boolean {
   return isAdmin || role === "editor";
 }

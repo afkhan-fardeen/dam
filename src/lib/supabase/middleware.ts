@@ -11,8 +11,9 @@ export async function updateSession(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const isLogin = path === "/login";
   const isAuthCallback = path.startsWith("/auth/");
+  const isShare = path.startsWith("/share/");
   const isApi = path.startsWith("/api/");
-  const isPublic = isLogin || isAuthCallback || isApi;
+  const isPublic = isLogin || isAuthCallback || isApi || isShare;
 
   // Missing env on Vercel → createServerClient throws → MIDDLEWARE_INVOCATION_FAILED.
   if (!supabaseUrl || !supabaseAnonKey) {

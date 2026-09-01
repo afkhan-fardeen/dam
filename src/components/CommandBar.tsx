@@ -10,7 +10,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { entityTypeColor } from "@/components/EntityChip";
-import type { Asset, Entity, Space } from "@/lib/types";
+import type { Asset, Entity, FsNode, Space } from "@/lib/types";
 
 type CommandBarProps = {
   spaces: Space[];
@@ -23,6 +23,27 @@ type ResultItem =
   | { kind: "action"; id: string; label: string; run: () => void }
   | { kind: "entity"; id: string; entity: Entity }
   | { kind: "document"; id: string; asset: Asset };
+
+function fsNodeToAsset(node: FsNode): Asset {
+  return {
+    id: node.id,
+    file_id: node.id,
+    original_name: node.name,
+    mime_type: node.mime_type,
+    size: node.size_bytes,
+    space_id: node.space_id,
+    folder_id: node.parent_id,
+    description: node.description,
+    created_by: node.created_by,
+    uploaded_by: node.uploaded_by,
+    has_thumbnail: node.has_thumbnail,
+    status: node.is_deleted ? "trashed" : "active",
+    created_at: node.created_at,
+    tags_text: node.tags_text,
+    tags: node.tags,
+    favorited: node.favorited,
+  };
+}
 
 const SEARCH_DEBOUNCE_MS = 180; // match DriveShell navbar live search
 
@@ -72,11 +93,26 @@ export function CommandBar({
       return;
     }
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q.trim())}`);
-      const json = await res.json();
-      if (res.ok) {
-        setEntities((json.entities ?? []) as Entity[]);
-        setDocuments((json.documents ?? json.assets ?? []) as Asset[]);
+      const [entityRes, fsRes] = await Promise.all([
+        fetch(`/api/entities?q=${encodeURIComponent(q.trim())}&limit=6`).catch(
+          () => null,
+        ),
+        fetch(`/api/fs/search?q=${encodeURIComponent(q.trim())}`),
+      ]);
+      if (entityRes?.ok) {
+        const ej = await entityRes.json();
+        setEntities((ej.entities ?? []) as Entity[]);
+      } else {
+        setEntities([]);
+      }
+      if (fsRes.ok) {
+        const fj = await fsRes.json();
+        const nodes = ((fj.nodes as FsNode[]) ?? []).filter(
+          (n) => n.node_type === "file",
+        );
+        setDocuments(nodes.map(fsNodeToAsset));
+      } else {
+        setDocuments([]);
       }
     } catch {
       /* ignore */

@@ -124,9 +124,32 @@ export function AppSidebar({
       const entries = await Promise.all(
         spaces.map(async (s) => {
           try {
-            const res = await fetch(`/api/folders?space_id=${s.id}`);
+            const res = await fetch(
+              `/api/fs/list?space_id=${encodeURIComponent(s.id)}&folders=1`,
+            );
             const json = await res.json();
-            const folders = res.ok ? ((json.folders as Folder[]) ?? []) : [];
+            const nodes = res.ok
+              ? ((json.nodes as {
+                  id: string;
+                  space_id: string;
+                  parent_id: string | null;
+                  name: string;
+                  created_by: string | null;
+                  created_at: string | null;
+                  passcode_enabled?: boolean;
+                }[]) ?? [])
+              : [];
+            const ids = new Set(nodes.map((n) => n.id));
+            const folders: Folder[] = nodes.map((n) => ({
+              id: n.id,
+              space_id: n.space_id,
+              parent_folder_id:
+                n.parent_id && ids.has(n.parent_id) ? n.parent_id : null,
+              name: n.name,
+              created_by: n.created_by,
+              created_at: n.created_at,
+              passcode_enabled: n.passcode_enabled,
+            }));
             return [s.id, folders] as const;
           } catch {
             return [s.id, [] as Folder[]] as const;

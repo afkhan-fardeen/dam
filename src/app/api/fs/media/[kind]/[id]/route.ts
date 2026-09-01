@@ -1,0 +1,128 @@
+import { NextResponse } from "next/server";
+import { requireUser, roleForSpace, logActivity } from "@/lib/auth";
+import { canDownload } from "@/lib/types";
+import { FS_NODE_COLS } from "@/lib/fsNodes";
+import { signFileApiToken, buildFileApiUrl } from "@/lib/fileApiAuth";
+
+export const runtime = "nodejs";
+
+type RouteContext = {
+  params: Promise<{ kind: string; id: string }>;
+};
+
+/** Proxy /fs/read and /fs/thumbnail through Next (auth + passcode-ready). */
+export async function GET(request: Request, context: RouteContext) {
+  const { user, profile, effectiveUserId, supabase } =
+    await requireUser(request);
+  if (!user || !profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
+  const { kind, id } = await context.params;
+  if (kind !== "file" && kind !== "thumbnail") {
+    return NextResponse.json({ error: "Unknown kind" }, { status: 400 });
+  }
+
+  const { data: node, error } = await supabase
+    .from("fs_nodes")
+    .select(FS_NODE_COLS)
+    .eq("id", id)
+    .eq("is_deleted", false)
+    .maybeSingle();
+  if (error || !node) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (node.node_type !== "file") {
+    return NextResponse.json({ error: "Not a file" }, { status: 400 });
+  }
+
+  const { data: memberships } = await supabase
+    .from("space_memberships")
+    .select("id,space_id,user_id,role,created_at")
+    .eq("user_id", effectiveUserId);
+  const role = roleForSpace(
+    memberships ?? [],
+    node.space_id,
+    profile.is_admin,
+  );
+  if (!role && !profile.is_admin) {
+    return NextResponse.json({ error: "No access" }, { status: 403 });
+  }
+
+  if (kind === "file" && !canDownload(role, profile.is_admin)) {
+    return NextResponse.json(
+      { error: "You can view this file, but not download the original." },
+      { status: 403 },
+    );
+  }
+
+  const fsPath = kind === "file" ? "/fs/read" : "/fs/thumbnail";
+  const { token } = signFileApiToken("GET", fsPath);
+  const upstreamUrl = buildFileApiUrl(
+    `${fsPath}?path=${encodeURIComponent(node.relative_path)}`,
+    token,
+  );
+
+  const forwardHeaders: Record<string, string> = {
+    "x-auth-token": token,
+    "ngrok-skip-browser-warning": "true",
+    "User-Agent": "DAM-NextFsProxy/1.0",
+  };
+  const range = request.headers.get("range");
+  if (range && kind === "file") forwardHeaders.Range = range;
+
+  const upstream = await fetch(upstreamUrl, {
+    headers: forwardHeaders,
+    cache: "no-store",
+  });
+
+  if (!upstream.ok && upstream.status !== 206) {
+    const detail = await upstream.text().catch(() => "");
+    return NextResponse.json(
+      { error: "Could not load media", status: upstream.status, detail: detail.slice(0, 200) },
+      { status: 502 },
+    );
+  }
+
+  if (kind === "file" && upstream.status === 200 && !range) {
+    await logActivity(
+      {
+        user_id: user.id,
+        space_id: node.space_id,
+        action: "download",
+        target_type: "fs_node",
+        target_id: node.id,
+      },
+      supabase,
+    );
+  }
+
+  const headers = new Headers();
+  const contentType =
+    upstream.headers.get("content-type") ||
+    (kind === "thumbnail" ? "image/jpeg" : node.mime_type) ||
+    "application/octet-stream";
+  headers.set("Content-Type", contentType);
+  headers.set("Cache-Control", "private, max-age=60");
+  const contentLength = upstream.headers.get("content-length");
+  if (contentLength) headers.set("Content-Length", contentLength);
+  const acceptRanges = upstream.headers.get("accept-ranges");
+  if (acceptRanges) headers.set("Accept-Ranges", acceptRanges);
+  const contentRange = upstream.headers.get("content-range");
+  if (contentRange) headers.set("Content-Range", contentRange);
+
+  const download = new URL(request.url).searchParams.get("download");
+  if (kind === "file") {
+    headers.set(
+      "Content-Disposition",
+      download
+        ? `attachment; filename="${node.name.replace(/"/g, "")}"`
+        : `inline; filename="${node.name.replace(/"/g, "")}"`,
+    );
+  }
+
+  return new NextResponse(upstream.body, {
+    status: upstream.status,
+    headers,
+  });
+}

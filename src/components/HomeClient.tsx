@@ -1,9 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { AllFilesClient } from "@/components/AllFilesClient";
+import { FsBrowseClient } from "@/components/FsBrowseClient";
 import { HomeGlass } from "@/components/HomeGlass";
-import { TrashClient } from "@/components/TrashClient";
 import type { Space, SpaceMembership } from "@/lib/types";
 
 type HomeClientProps = {
@@ -26,12 +25,8 @@ export function HomeClient({
     return <HomeGlass profileName={profileName} spaces={spaces} />;
   }
 
-  if (view === "trash") {
-    return <TrashClient spaces={spaces} />;
-  }
-
   return (
-    <AllFilesClient
+    <FsBrowseClient
       spaces={spaces}
       memberships={memberships}
       isAdmin={isAdmin}

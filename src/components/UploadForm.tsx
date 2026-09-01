@@ -9,7 +9,7 @@ import {
   type PickedEntity,
 } from "@/components/EntityPicker";
 import { Button } from "@/components/ui/Button";
-import type { Folder } from "@/lib/types";
+import type { FsNode } from "@/lib/types";
 
 type DestinationOption = {
   id: string;
@@ -63,7 +63,7 @@ export function UploadForm({
   const { enqueueUploads, serverOnline, notifyLibraryChange } = useDriveChrome();
   const [destSpaceId, setDestSpaceId] = useState(initialSpaceId);
   const [destFolderId, setDestFolderId] = useState<string | null>(initialFolderId);
-  const [folders, setFolders] = useState<Folder[]>([]);
+  const [folders, setFolders] = useState<FsNode[]>([]);
   const [foldersLoading, setFoldersLoading] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -113,10 +113,12 @@ export function UploadForm({
     setFoldersLoading(true);
     void (async () => {
       try {
-        const res = await fetch(`/api/folders?space_id=${destSpaceId}`);
+        const res = await fetch(
+          `/api/fs/list?space_id=${encodeURIComponent(destSpaceId)}&folders=1`,
+        );
         const json = await res.json();
         if (!cancelled && res.ok) {
-          setFolders((json.folders as Folder[]) ?? []);
+          setFolders((json.nodes as FsNode[]) ?? []);
         }
       } finally {
         if (!cancelled) setFoldersLoading(false);
@@ -128,46 +130,9 @@ export function UploadForm({
   }, [destSpaceId]);
 
   useEffect(() => {
-    let cancelled = false;
+    // Folder inheritance (brand/tags) remains legacy; skip quietly for fs mirror.
     setInheritedBrand(null);
     setInheritedTags([]);
-    void (async () => {
-      try {
-        const params = new URLSearchParams({ space_id: destSpaceId });
-        if (destFolderId) params.set("folder_id", destFolderId);
-        const res = await fetch(`/api/folders/effective?${params}`);
-        const json = await res.json();
-        if (!res.ok || cancelled) return;
-        const effective = json.effective as {
-          brand?: string | null;
-          tagNames?: string[];
-        };
-        const fromBrand = effective?.brand?.trim() || null;
-        const fromTags = effective?.tagNames ?? [];
-        if (fromBrand) {
-          setInheritedBrand(fromBrand);
-          setBrand((prev) => prev || fromBrand);
-        }
-        if (fromTags.length) {
-          setInheritedTags(fromTags);
-          setTags((prev) => {
-            const next = [...prev];
-            const seen = new Set(prev.map((t) => t.toLowerCase()));
-            for (const name of fromTags) {
-              if (seen.has(name.toLowerCase())) continue;
-              seen.add(name.toLowerCase());
-              next.push(name);
-            }
-            return next;
-          });
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, [destSpaceId, destFolderId]);
 
   function addFiles(list: FileList | null) {
@@ -216,18 +181,18 @@ export function UploadForm({
     setCreateFolderBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/folders", {
+      const res = await fetch("/api/fs/list", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           space_id: destSpaceId,
-          parent_folder_id: null,
+          parent_id: null,
           name,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Could not create folder.");
-      const folder = json.folder as Folder;
+      const folder = json.node as FsNode;
       setFolders((prev) => [...prev, folder]);
       setDestFolderId(folder.id);
       setCreatingFolder(false);
@@ -301,12 +266,13 @@ export function UploadForm({
 
   const folderOptions = (() => {
     const byId = new Map(folders.map((f) => [f.id, f]));
-    function pathOf(f: Folder): string {
+    function pathOf(f: FsNode): string {
       const parts = [f.name];
-      let cur: Folder | undefined = f;
-      while (cur?.parent_folder_id) {
-        cur = byId.get(cur.parent_folder_id);
+      let cur: FsNode | undefined = f;
+      while (cur?.parent_id) {
+        cur = byId.get(cur.parent_id);
         if (!cur) break;
+        // Skip space-root slug folder name in breadcrumb when possible
         parts.unshift(cur.name);
       }
       return parts.join(" / ");

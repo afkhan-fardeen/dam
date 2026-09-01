@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getUserSpaces, roleForSpace } from "@/lib/auth";
-import { SpaceWorkspace } from "@/components/SpaceWorkspace";
+import { FsSpaceWorkspace } from "@/components/FsSpaceWorkspace";
 
 type PageProps = {
   params: Promise<{ spaceSlug: string }>;
@@ -20,7 +20,7 @@ export default async function SpacePage({ params }: PageProps) {
 
   return (
     <Suspense fallback={<div className="p-5 text-sm text-base-content/60">Loading…</div>}>
-      <SpaceWorkspace
+      <FsSpaceWorkspace
         space={space}
         role={role}
         isAdmin={profile.is_admin}

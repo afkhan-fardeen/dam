@@ -13,7 +13,7 @@ import {
   useFileServerHealth,
   type ServerStatus,
 } from "@/lib/useFileServerHealth";
-import { uploadFileWithProgress } from "@/lib/upload";
+import { uploadFsFileWithProgress } from "@/lib/fsUpload";
 import type { Folder } from "@/lib/types";
 
 export type TransferJob = {
@@ -167,7 +167,6 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
         folderId,
         tags,
         description,
-        brand,
         createdBy,
         entityIds,
         viewHref,
@@ -185,13 +184,12 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       });
 
       try {
-        const asset = await uploadFileWithProgress({
+        await uploadFsFileWithProgress({
           file,
           spaceId,
-          folderId,
+          parentId: folderId,
           tags,
           description,
-          brand,
           createdBy,
           onProgress: (pct) =>
             upsertJob({
@@ -205,17 +203,8 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
             }),
         });
 
-        if (asset?.id && entityIds?.length) {
-          await Promise.all(
-            entityIds.map((entityId) =>
-              fetch(`/api/assets/${asset.id}/entities`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ entity_id: entityId }),
-              }).catch(() => null),
-            ),
-          );
-        }
+        // Entity linking stays on legacy assets until entity FKs move to fs_nodes.
+        void entityIds;
 
         upsertJob({
           id: jobId,

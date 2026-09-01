@@ -3,9 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { IconFolder, IconPhoto, IconFile } from "@tabler/icons-react";
 import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
-import { assetMatchReason, isImageMime } from "@/lib/matchReason";
-import type { FolderSearchHit } from "@/lib/search";
-import type { Asset, Space } from "@/lib/types";
+import type { FsNode, Space } from "@/lib/types";
 
 type SearchTypeaheadProps = {
   query: string;
@@ -14,6 +12,10 @@ type SearchTypeaheadProps = {
   spaces?: Space[];
 };
 
+function isImageMime(mime: string | null | undefined): boolean {
+  return Boolean(mime && mime.startsWith("image/"));
+}
+
 export function SearchTypeahead({
   query,
   onClose,
@@ -21,16 +23,14 @@ export function SearchTypeahead({
   spaces = [],
 }: SearchTypeaheadProps) {
   const navigate = useViewTransitionNavigate();
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [folders, setFolders] = useState<FolderSearchHit[]>([]);
+  const [nodes, setNodes] = useState<FsNode[]>([]);
   const [loading, setLoading] = useState(false);
   const spaceById = new Map(spaces.map((s) => [s.id, s]));
 
   useEffect(() => {
     const q = query.trim();
     if (q.length < 2) {
-      setAssets([]);
-      setFolders([]);
+      setNodes([]);
       return;
     }
     let cancelled = false;
@@ -39,17 +39,13 @@ export function SearchTypeahead({
       void (async () => {
         try {
           const res = await fetch(
-            `/api/search?q=${encodeURIComponent(q)}&limit=8`,
+            `/api/fs/search?q=${encodeURIComponent(q)}`,
           );
           const json = await res.json();
           if (!res.ok || cancelled) return;
-          setAssets((json.documents ?? json.assets ?? []).slice(0, 6) as Asset[]);
-          setFolders((json.folders ?? []).slice(0, 4) as FolderSearchHit[]);
+          setNodes(((json.nodes as FsNode[]) ?? []).slice(0, 10));
         } catch {
-          if (!cancelled) {
-            setAssets([]);
-            setFolders([]);
-          }
+          if (!cancelled) setNodes([]);
         } finally {
           if (!cancelled) setLoading(false);
         }
@@ -72,27 +68,25 @@ export function SearchTypeahead({
   const q = query.trim();
   if (q.length < 2) return null;
 
-  const images = assets.filter((a) => isImageMime(a.mime_type));
-  const files = assets.filter((a) => !isImageMime(a.mime_type));
+  const folders = nodes.filter((n) => n.node_type === "folder").slice(0, 4);
+  const files = nodes.filter((n) => n.node_type === "file");
+  const images = files.filter((n) => isImageMime(n.mime_type)).slice(0, 6);
+  const other = files.filter((n) => !isImageMime(n.mime_type)).slice(0, 6);
 
-  function goAsset(asset: Asset) {
+  function goNode(node: FsNode) {
     onSelect();
-    const space = asset.space_id ? spaceById.get(asset.space_id) : null;
-    if (space) {
-      const params = new URLSearchParams();
-      if (asset.folder_id) params.set("folder", asset.folder_id);
-      params.set("asset", asset.id);
-      navigate(`/s/${space.slug}?${params.toString()}`);
+    const space = spaceById.get(node.space_id);
+    if (!space) {
+      navigate(`/search?q=${encodeURIComponent(q)}`);
       return;
     }
-    navigate(`/search?q=${encodeURIComponent(q)}`);
-  }
-
-  function goFolder(folder: FolderSearchHit) {
-    onSelect();
-    if (folder.space_slug) {
-      navigate(`/s/${folder.space_slug}?folder=${encodeURIComponent(folder.id)}`);
+    if (node.node_type === "folder") {
+      navigate(`/s/${space.slug}?folder=${encodeURIComponent(node.id)}`);
+      return;
     }
+    const params = new URLSearchParams();
+    if (node.parent_id) params.set("folder", node.parent_id);
+    navigate(`/s/${space.slug}?${params.toString()}`);
   }
 
   function ResultRow({
@@ -135,7 +129,7 @@ export function SearchTypeahead({
       role="listbox"
       aria-label="Search suggestions"
     >
-      {loading && assets.length === 0 && folders.length === 0 ? (
+      {loading && nodes.length === 0 ? (
         <p className="search-panel-empty">Searching…</p>
       ) : null}
 
@@ -147,9 +141,9 @@ export function SearchTypeahead({
               key={f.id}
               icon={<IconFolder size={16} stroke={1.75} />}
               title={f.name}
-              meta={f.space_name || undefined}
+              meta={spaceById.get(f.space_id)?.name}
               chip="Folder"
-              onClick={() => goFolder(f)}
+              onClick={() => goNode(f)}
             />
           ))}
         </div>
@@ -162,41 +156,35 @@ export function SearchTypeahead({
             <ResultRow
               key={a.id}
               icon={<IconPhoto size={16} stroke={1.75} />}
-              title={a.original_name || "Untitled"}
-              meta={
-                a.space_id ? spaceById.get(a.space_id)?.name : undefined
-              }
-              chip={assetMatchReason(q, a)}
+              title={a.name}
+              meta={spaceById.get(a.space_id)?.name}
               thumb={
                 a.has_thumbnail
-                  ? `/api/media/thumbnail/${encodeURIComponent(a.file_id)}`
+                  ? `/api/fs/media/thumbnail/${encodeURIComponent(a.id)}`
                   : null
               }
-              onClick={() => goAsset(a)}
+              onClick={() => goNode(a)}
             />
           ))}
         </div>
       ) : null}
 
-      {files.length > 0 ? (
+      {other.length > 0 ? (
         <div className="search-panel-group">
           <p className="search-panel-label">Files</p>
-          {files.map((a) => (
+          {other.map((a) => (
             <ResultRow
               key={a.id}
               icon={<IconFile size={16} stroke={1.75} />}
-              title={a.original_name || "Untitled"}
-              meta={
-                a.space_id ? spaceById.get(a.space_id)?.name : undefined
-              }
-              chip={assetMatchReason(q, a)}
-              onClick={() => goAsset(a)}
+              title={a.name}
+              meta={spaceById.get(a.space_id)?.name}
+              onClick={() => goNode(a)}
             />
           ))}
         </div>
       ) : null}
 
-      {!loading && folders.length === 0 && assets.length === 0 ? (
+      {!loading && nodes.length === 0 ? (
         <p className="search-panel-empty">No matches</p>
       ) : null}
 
