@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireDrive } from "@/lib/auth";
 import {
   FS_NODE_COLS,
   attachFsFavorites,
@@ -16,9 +16,9 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
 
   const url = new URL(request.url);
@@ -50,28 +50,48 @@ export async function GET(request: Request) {
     nodes = (data ?? []) as FsNode[];
   } else {
     try {
-      nodes = await listFsChildren(supabase, {
-        parentId: parentIdParam || null,
-      });
+      const parentId =
+        parentIdParam && parentIdParam !== "null" && parentIdParam !== "undefined"
+          ? parentIdParam
+          : null;
+      if (
+        parentId &&
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          parentId,
+        )
+      ) {
+        return NextResponse.json(
+          { error: "Invalid folder id" },
+          { status: 400 },
+        );
+      }
+      nodes = await listFsChildren(supabase, { parentId });
     } catch (err) {
-      return NextResponse.json(
-        { error: err instanceof Error ? err.message : "List failed" },
-        { status: 400 },
-      );
+      const message =
+        err instanceof Error ? err.message : "List failed";
+      console.error("[fs/list]", message);
+      return NextResponse.json({ error: message }, { status: 400 });
     }
   }
 
-  nodes = await attachFsNodeTags(supabase, nodes);
-  nodes = await attachFsFavorites(supabase, effectiveUserId, nodes);
+  try {
+    nodes = await attachFsNodeTags(supabase, nodes);
+    nodes = await attachFsFavorites(supabase, effectiveUserId, nodes);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Enrichment failed";
+    console.error("[fs/list] enrich", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 
   return NextResponse.json({ nodes });
 }
 
 export async function POST(request: Request) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
 
   const body = (await request.json()) as {
@@ -118,7 +138,7 @@ export async function POST(request: Request) {
       node_type: "folder",
       name,
       relative_path: relativePath,
-      uploaded_by: user.id,
+      uploaded_by: effectiveUserId,
       is_deleted: false,
     })
     .select(FS_NODE_COLS)

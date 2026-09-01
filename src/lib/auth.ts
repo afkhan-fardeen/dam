@@ -1,4 +1,5 @@
 import { createClient, createRouteClient } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import type { Space, SpaceMembership, SpaceRole, Profile } from "@/lib/types";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
@@ -16,6 +17,72 @@ export type AuthContext = {
   effectiveUserId: string | null;
   viewingAs: Profile | null;
 };
+
+/** Open portal actor — no login required; FS APIs use service role. */
+async function resolvePortalActor(
+  admin: SupabaseClient,
+): Promise<Profile | null> {
+  const email = (
+    process.env.PORTAL_LOGIN_EMAIL ||
+    process.env.NEXT_PUBLIC_PORTAL_LOGIN_EMAIL ||
+    ""
+  )
+    .trim()
+    .toLowerCase();
+  if (email) {
+    const { data } = await admin
+      .from("profiles")
+      .select("id,full_name,email,is_admin,is_active,created_at")
+      .eq("email", email)
+      .maybeSingle();
+    if (data) return data as Profile;
+  }
+  const { data: adminRow } = await admin
+    .from("profiles")
+    .select("id,full_name,email,is_admin,is_active,created_at")
+    .eq("is_admin", true)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return (adminRow as Profile | null) ?? null;
+}
+
+/**
+ * Drive access without requiring a browser login session.
+ * Always uses the service-role client so RLS does not block open-drive ops.
+ */
+export async function requireDrive(_request?: Request): Promise<AuthContext> {
+  const admin = getSupabaseAdmin();
+  const actor = await resolvePortalActor(admin);
+  if (!actor) {
+    return {
+      supabase: admin,
+      user: null,
+      profile: null,
+      realProfile: null,
+      effectiveUserId: null,
+      viewingAs: null,
+    };
+  }
+  const profile: Profile = {
+    ...actor,
+    full_name:
+      process.env.NEXT_PUBLIC_PORTAL_DISPLAY_NAME?.trim() ||
+      actor.full_name ||
+      "Main Drive",
+    is_admin: true,
+  };
+  return {
+    supabase: admin,
+    // Synthetic user so pages that still check `user` keep working open-portal.
+    user: { id: actor.id } as User,
+    profile,
+    realProfile: actor,
+    effectiveUserId: actor.id,
+    viewingAs: null,
+  };
+}
 
 async function resolveViewAs(
   supabase: SupabaseClient,
@@ -134,8 +201,8 @@ export async function requireUser(request?: Request): Promise<AuthContext> {
 }
 
 export async function requireAdmin(request?: Request) {
-  const ctx = await requireUser(request);
-  if (!ctx.user || !ctx.realProfile?.is_admin) {
+  const ctx = await requireDrive(request);
+  if (!ctx.profile?.is_admin || !ctx.effectiveUserId) {
     return { ...ctx, ok: false as const };
   }
   return { ...ctx, ok: true as const };
@@ -187,9 +254,9 @@ async function loadSpacesForUser(
 }
 
 export async function getUserSpaces() {
-  const { supabase, user, profile, realProfile, viewingAs, effectiveUserId } =
-    await requireUser();
-  if (!user || !profile || !effectiveUserId) {
+  // Open portal: always load shell via service role + portal actor (no login).
+  const ctx = await requireDrive();
+  if (!ctx.profile || !ctx.effectiveUserId) {
     return {
       spaces: [] as Space[],
       memberships: [] as SpaceMembership[],
@@ -200,19 +267,13 @@ export async function getUserSpaces() {
     };
   }
 
-  const { spaces, memberships } = await loadSpacesForUser(
-    supabase,
-    effectiveUserId,
-    profile.is_admin,
-  );
-
   return {
-    spaces,
-    memberships,
-    profile,
-    user,
-    realProfile,
-    viewingAs,
+    spaces: [] as Space[],
+    memberships: [] as SpaceMembership[],
+    profile: ctx.profile,
+    user: ctx.user,
+    realProfile: ctx.realProfile,
+    viewingAs: null as Profile | null,
   };
 }
 

@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   IconClock,
   IconHome,
-  IconKey,
-  IconLogout,
   IconSettings,
   IconTrash,
   IconUser,
@@ -13,7 +11,6 @@ import {
 import { usePathname, useSearchParams } from "next/navigation";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { FolderGlyph } from "@/components/explorer/FolderGlyph";
-import { Menu } from "@/components/ui/Menu";
 import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
 import type { ServerStatus } from "@/lib/useFileServerHealth";
 import type { FsNode, Profile } from "@/lib/types";
@@ -31,8 +28,6 @@ type Props = {
   profile: Profile;
   serverStatus: ServerStatus;
   showTrash: boolean;
-  onOpenSettings: () => void;
-  onSignOut: () => void;
   mode?: "employee" | "admin";
 };
 
@@ -53,8 +48,6 @@ export function ExplorerNavPane({
   profile,
   serverStatus,
   showTrash,
-  onOpenSettings,
-  onSignOut,
   mode = "employee",
 }: Props) {
   const pathname = usePathname();
@@ -214,39 +207,14 @@ export function ExplorerNavPane({
               {server.title}
             </span>
           </div>
-          <Menu
-            trigger={
-              <button type="button" className="xp-nav-item">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--win-bg)] border border-[var(--win-border)] text-[10px] font-semibold">
-                  {initials || <IconUser size={12} />}
-                </span>
-                <span className="truncate">
-                  {profile.full_name?.trim() || profile.email || "Account"}
-                </span>
-              </button>
-            }
-          >
-            {profile.is_admin ? (
-              <button
-                type="button"
-                className="menu-row"
-                onClick={() => go("/admin/users")}
-              >
-                <IconSettings size={15} /> Admin
-              </button>
-            ) : null}
-            <button type="button" className="menu-row" onClick={onOpenSettings}>
-              <IconKey size={15} /> Change password
-            </button>
-            <div className="card-divider" />
-            <button
-              type="button"
-              className="menu-row menu-row-danger"
-              onClick={onSignOut}
-            >
-              <IconLogout size={15} /> Sign out
-            </button>
-          </Menu>
+          <div className="xp-nav-item" aria-label="Portal user">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--win-bg)] border border-[var(--win-border)] text-[10px] font-semibold">
+              {initials || <IconUser size={12} />}
+            </span>
+            <span className="truncate">
+              {profile.full_name?.trim() || profile.email || "Main Drive"}
+            </span>
+          </div>
         </div>
       </nav>
     </>

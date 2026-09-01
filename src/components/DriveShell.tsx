@@ -17,7 +17,6 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { UploadForm } from "@/components/UploadForm";
-import { createClient } from "@/lib/supabase/client";
 import {
   canEdit,
   type Space,
@@ -27,12 +26,10 @@ import {
 import { roleForSpace } from "@/lib/auth-client";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { UploadProgressPanel } from "@/components/UploadProgressPanel";
-import { PasswordField } from "@/components/PasswordField";
 import { CommandBar } from "@/components/CommandBar";
 import { ExplorerNavPane } from "@/components/explorer/ExplorerNavPane";
 import { ExplorerDetails } from "@/components/explorer/ExplorerDetails";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
 import { navigateWithTransition } from "@/components/ui/useViewTransitionNavigate";
 import { readLastPlace } from "@/lib/lastPlace";
 import { readViewMode, writeViewMode } from "@/lib/uiPrefs";
@@ -90,9 +87,6 @@ export function DriveShell({
   const showTrash = true;
 
   const [query, setQuery] = useState(searchParams.get("q") || "");
-  const [passwordOpen, setPasswordOpen] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -220,26 +214,6 @@ export function DriveShell({
       router,
       `/search?q=${encodeURIComponent(trimmed)}`,
     );
-  }
-
-  async function signOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.replace("/login");
-    router.refresh();
-  }
-
-  async function changePassword(e: React.FormEvent) {
-    e.preventDefault();
-    setPasswordMsg(null);
-    const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) {
-      setPasswordMsg(error.message);
-      return;
-    }
-    setPasswordMsg("Password updated.");
-    setNewPassword("");
   }
 
   async function exitViewAs() {
@@ -482,11 +456,6 @@ export function DriveShell({
             serverStatus={serverStatus}
             showTrash={showTrash}
             mode={onAdmin ? "admin" : "employee"}
-            onOpenSettings={() => {
-              setPasswordOpen(true);
-              setPasswordMsg(null);
-            }}
-            onSignOut={() => void signOut()}
           />
         ) : null}
 
@@ -593,38 +562,6 @@ export function DriveShell({
         />
       ) : null}
 
-      {passwordOpen ? (
-        <Modal
-          title="Change password"
-          onClose={() => setPasswordOpen(false)}
-          onSubmit={changePassword}
-          footer={
-            <>
-              <Button
-                variant="secondary"
-                onClick={() => setPasswordOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button variant="primary" type="submit">
-                Update password
-              </Button>
-            </>
-          }
-        >
-          <PasswordField
-            label="New password"
-            value={newPassword}
-            onChange={setNewPassword}
-            required
-            minLength={8}
-            autoComplete="new-password"
-          />
-          {passwordMsg ? (
-            <p className="type-caption">{passwordMsg}</p>
-          ) : null}
-        </Modal>
-      ) : null}
     </div>
   );
 }

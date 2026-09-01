@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getUserSpaces } from "@/lib/auth";
 import { EntityProfileClient } from "@/components/EntityProfileClient";
@@ -9,8 +8,14 @@ type PageProps = {
 
 export default async function EntityPage({ params }: PageProps) {
   const { entityId } = await params;
-  const { user, profile } = await getUserSpaces();
-  if (!user || !profile) redirect("/login");
+  const { profile } = await getUserSpaces();
+  if (!profile) {
+    return (
+      <div className="p-5 text-sm text-[var(--ink-soft)]">
+        Portal is not configured.
+      </div>
+    );
+  }
 
   return (
     <Suspense

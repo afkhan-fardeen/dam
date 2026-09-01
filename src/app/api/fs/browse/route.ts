@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireDrive } from "@/lib/auth";
 import {
   FS_NODE_COLS,
   attachFsFavorites,
@@ -12,9 +12,9 @@ export const runtime = "nodejs";
 /** Cross-tree browse: recent / trash / starred / all files. */
 export async function GET(request: Request) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
 
   const url = new URL(request.url);

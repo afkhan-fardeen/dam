@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireUser, logActivity } from "@/lib/auth";
+import { requireDrive, logActivity } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const { user, effectiveUserId, supabase } = await requireUser(request);
-  if (!user || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  const { user, effectiveUserId, supabase } = await requireDrive(request);
+  if (!effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
   const body = (await request.json()) as { fs_node_id?: string };
   if (!body.fs_node_id) {
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   }
   await logActivity(
     {
-      user_id: user.id,
+      user_id: effectiveUserId,
       action: "favorite",
       target_type: "fs_node",
       target_id: body.fs_node_id,
@@ -32,9 +32,9 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const { user, effectiveUserId, supabase } = await requireUser(request);
-  if (!user || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  const { user, effectiveUserId, supabase } = await requireDrive(request);
+  if (!effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
   const fsNodeId = new URL(request.url).searchParams.get("fs_node_id");
   if (!fsNodeId) {

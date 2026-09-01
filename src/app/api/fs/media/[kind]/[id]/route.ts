@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser, logActivity } from "@/lib/auth";
+import { requireDrive, logActivity } from "@/lib/auth";
 import { FS_NODE_COLS } from "@/lib/fsNodes";
 import { signFileApiToken, buildFileApiUrl } from "@/lib/fileApiAuth";
 
@@ -11,9 +11,9 @@ type RouteContext = {
 
 export async function GET(request: Request, context: RouteContext) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
 
   const { kind, id } = await context.params;
@@ -69,7 +69,7 @@ export async function GET(request: Request, context: RouteContext) {
   if (kind === "file" && upstream.status === 200 && !range) {
     await logActivity(
       {
-        user_id: user.id,
+        user_id: effectiveUserId,
         action: "download",
         target_type: "fs_node",
         target_id: node.id,

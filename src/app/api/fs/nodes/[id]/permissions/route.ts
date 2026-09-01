@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireDrive } from "@/lib/auth";
 import { rpcCanEditNode } from "@/lib/fsNodes";
 import type { PermissionLevel } from "@/lib/types";
 
@@ -9,9 +9,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, context: RouteContext) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
   const { id } = await context.params;
 
@@ -30,9 +30,9 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function POST(request: Request, context: RouteContext) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
   const { id } = await context.params;
   const canEdit =
@@ -95,9 +95,9 @@ export async function POST(request: Request, context: RouteContext) {
 
 export async function DELETE(request: Request, context: RouteContext) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
   const { id } = await context.params;
   const canEdit =

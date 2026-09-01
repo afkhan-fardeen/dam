@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { requireDrive } from "@/lib/auth";
 import {
   FS_NODE_COLS,
   grantCreatorEdit,
@@ -18,9 +18,9 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
 
   const body = (await request.json()) as {
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     body: JSON.stringify({
       path: targetPath,
       size,
-      user_id: user.id,
+      user_id: effectiveUserId,
       chunk_size: body.chunk_size || 8 * 1024 * 1024,
     }),
   });
@@ -103,9 +103,9 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
 
   const body = (await request.json()) as {
@@ -133,7 +133,7 @@ export async function PUT(request: Request) {
     body: JSON.stringify({
       session_id: body.session_id,
       mime_type: body.mime_type || null,
-      user_id: user.id,
+      user_id: effectiveUserId,
     }),
   });
   const completeJson = await completeRes.json().catch(() => ({}));
@@ -180,7 +180,7 @@ export async function PUT(request: Request) {
         has_thumbnail: Boolean(completeJson.has_thumbnail),
         description: body.description ?? null,
         created_by: body.created_by ?? null,
-        uploaded_by: user.id,
+        uploaded_by: effectiveUserId,
         is_deleted: false,
       },
       { onConflict: "relative_path" },

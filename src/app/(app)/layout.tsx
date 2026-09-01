@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getUserSpaces } from "@/lib/auth";
 import { DriveChromeProvider } from "@/components/DriveChrome";
@@ -9,10 +8,14 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { spaces, memberships, profile, user, viewingAs } =
-    await getUserSpaces();
-  if (!user || !profile) {
-    redirect("/login");
+  const { spaces, memberships, profile, viewingAs } = await getUserSpaces();
+  if (!profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 text-sm text-[var(--ink-soft)]">
+        Portal is not configured. Ensure SUPABASE_SERVICE_ROLE_KEY and a profile
+        for PORTAL_LOGIN_EMAIL exist.
+      </div>
+    );
   }
 
   return (

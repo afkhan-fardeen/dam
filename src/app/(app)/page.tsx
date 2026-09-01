@@ -1,11 +1,16 @@
-import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getUserSpaces } from "@/lib/auth";
 import { DriveHomeClient } from "@/components/DriveHomeClient";
 
 export default async function HomePage() {
-  const { profile, user } = await getUserSpaces();
-  if (!user || !profile) redirect("/login");
+  const { profile } = await getUserSpaces();
+  if (!profile) {
+    return (
+      <div className="p-5 text-sm text-[var(--ink-soft)]">
+        Portal is not configured.
+      </div>
+    );
+  }
 
   return (
     <Suspense

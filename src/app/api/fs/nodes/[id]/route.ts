@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser, logActivity } from "@/lib/auth";
+import { requireDrive, logActivity } from "@/lib/auth";
 import {
   FS_NODE_COLS,
   attachFsFavorites,
@@ -26,9 +26,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, context: RouteContext) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
   const { id } = await context.params;
   const { data, error } = await supabase
@@ -48,9 +48,9 @@ export async function GET(request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
   const { id } = await context.params;
   const body = (await request.json()) as {
@@ -84,7 +84,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (rErr) throw rErr;
       await logActivity(
         {
-          user_id: user.id,
+          user_id: effectiveUserId,
           action: "restore",
           target_type: "fs_node",
           target_id: id,
@@ -128,7 +128,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           mime_type: node.mime_type,
           content_hash: node.content_hash,
           has_thumbnail: node.has_thumbnail,
-          uploaded_by: user.id,
+          uploaded_by: effectiveUserId,
         })
         .select(FS_NODE_COLS)
         .single();
@@ -227,9 +227,9 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 export async function DELETE(request: Request, context: RouteContext) {
   const { user, profile, effectiveUserId, supabase } =
-    await requireUser(request);
-  if (!user || !profile || !effectiveUserId) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+    await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
   const { id } = await context.params;
   const url = new URL(request.url);
@@ -266,7 +266,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
     await logActivity(
       {
-        user_id: user.id,
+        user_id: effectiveUserId,
         action: permanent ? "permanent_delete" : "trash",
         target_type: "fs_node",
         target_id: id,
