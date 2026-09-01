@@ -4,10 +4,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { IconFolderPlus, IconX } from "@tabler/icons-react";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { getTagChipStyles } from "@/lib/categories";
-import {
-  EntityPicker,
-  type PickedEntity,
-} from "@/components/EntityPicker";
 import { Button } from "@/components/ui/Button";
 import type { FsNode } from "@/lib/types";
 
@@ -27,7 +23,6 @@ type UploadFormProps = {
   destinationOptions: DestinationOption[];
   onUploaded?: (assetIds?: string[]) => void;
   onCancel: () => void;
-  /** Called as soon as upload work starts (close the modal) */
   onStarted?: () => void;
   initialFile?: File | null;
 };
@@ -48,26 +43,17 @@ function fileKey(file: File, index: number): string {
 }
 
 export function UploadForm({
-  spaceId: initialSpaceId,
-  spaceName: initialSpaceName,
-  spaceSlug: initialSpaceSlug,
   folderId: initialFolderId,
   folderName: initialFolderName,
   defaultCreatedBy,
-  destinationOptions,
   onUploaded,
   onCancel,
   onStarted,
   initialFile = null,
 }: UploadFormProps) {
-  const { enqueueUploads, serverOnline, notifyLibraryChange } = useDriveChrome();
-  const [destSpaceId, setDestSpaceId] = useState(initialSpaceId);
-  const [destFolderId, setDestFolderId] = useState<string | null>(initialFolderId);
+  const { enqueueUploads, serverOnline } = useDriveChrome();
+  const [destFolderId] = useState<string | null>(initialFolderId);
   const [folders, setFolders] = useState<FsNode[]>([]);
-  const [foldersLoading, setFoldersLoading] = useState(false);
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
-  const [createFolderBusy, setCreateFolderBusy] = useState(false);
 
   const [queue, setQueue] = useState<QueuedFile[]>(() =>
     initialFile
@@ -76,31 +62,18 @@ export function UploadForm({
   );
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
-  const [entities, setEntities] = useState<PickedEntity[]>([]);
   const [description, setDescription] = useState("");
-  const [brand, setBrand] = useState("");
-  const [createdBy, setCreatedBy] = useState(defaultCreatedBy);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inheritedBrand, setInheritedBrand] = useState<string | null>(null);
-  const [inheritedTags, setInheritedTags] = useState<string[]>([]);
-  const [moreOpen, setMoreOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const folderInputId = useId();
 
-  const destPlace =
-    destinationOptions.find((d) => d.id === destSpaceId) ?? {
-      id: destSpaceId,
-      name: initialSpaceName,
-      slug: initialSpaceSlug,
-    };
-
   const destFolderName =
     destFolderId == null
-      ? "Space root"
+      ? "Main Drive"
       : folders.find((f) => f.id === destFolderId)?.name ||
-        (destFolderId === initialFolderId ? initialFolderName : null) ||
+        initialFolderName ||
         "Folder";
 
   useEffect(() => {
@@ -110,30 +83,21 @@ export function UploadForm({
 
   useEffect(() => {
     let cancelled = false;
-    setFoldersLoading(true);
     void (async () => {
       try {
-        const res = await fetch(
-          `/api/fs/list?folders=1`,
-        );
+        const res = await fetch(`/api/fs/list?folders=1`);
         const json = await res.json();
         if (!cancelled && res.ok) {
           setFolders((json.nodes as FsNode[]) ?? []);
         }
-      } finally {
-        if (!cancelled) setFoldersLoading(false);
+      } catch {
+        /* ignore */
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [destSpaceId]);
-
-  useEffect(() => {
-    // Folder inheritance (brand/tags) remains legacy; skip quietly for fs mirror.
-    setInheritedBrand(null);
-    setInheritedTags([]);
-  }, [destSpaceId, destFolderId]);
+  }, []);
 
   function addFiles(list: FileList | null) {
     if (!list?.length) return;
@@ -175,49 +139,6 @@ export function UploadForm({
     return next;
   }
 
-  async function createFolderInline() {
-    const name = newFolderName.trim();
-    if (!name) return;
-    setCreateFolderBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/fs/list", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          space_id: destSpaceId,
-          parent_id: null,
-          name,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Could not create folder.");
-      const folder = json.node as FsNode;
-      setFolders((prev) => [...prev, folder]);
-      setDestFolderId(folder.id);
-      setCreatingFolder(false);
-      setNewFolderName("");
-      notifyLibraryChange();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create folder.");
-    } finally {
-      setCreateFolderBusy(false);
-    }
-  }
-
-  function viewHrefForDest(): string {
-    const base = `/s/${destPlace.slug}`;
-    return destFolderId
-      ? `${base}?folder=${encodeURIComponent(destFolderId)}`
-      : base;
-  }
-
-  function viewLabelForDest(): string {
-    return destFolderId
-      ? `${destPlace.name} / ${destFolderName}`
-      : destPlace.name;
-  }
-
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!serverOnline) {
@@ -228,26 +149,22 @@ export function UploadForm({
       setError("Choose files or a folder to upload.");
       return;
     }
-    if (creatingFolder) {
-      setError("Create the folder first, or cancel creating one.");
-      return;
-    }
     const tagList = commitDraftTag();
-    const viewHref = viewHrefForDest();
-    const viewLabel = viewLabelForDest();
-    const entityIds = entities.map((e) => e.id);
+    const viewHref = destFolderId
+      ? `/?folder=${encodeURIComponent(destFolderId)}`
+      : "/";
+    const viewLabel = destFolderId
+      ? `Main Drive / ${destFolderName}`
+      : "Main Drive";
 
-    // Hand off to the shell queue so uploads keep running after the modal
-    // closes and while you navigate anywhere in the app.
+    setBusy(true);
     enqueueUploads(
       queue.map((item) => ({
         file: item.file,
         folderId: destFolderId,
         tags: tagList,
         description: description || null,
-        brand: brand || null,
-        createdBy: createdBy || null,
-        entityIds,
+        createdBy: defaultCreatedBy || null,
         viewHref,
         viewLabel,
       })),
@@ -257,33 +174,6 @@ export function UploadForm({
     onUploaded?.(undefined);
     onCancel();
   }
-
-  const inheritParts = [
-    inheritedBrand ? inheritedBrand : null,
-    inheritedTags.length ? inheritedTags.join(", ") : null,
-  ].filter(Boolean) as string[];
-
-  const folderOptions = (() => {
-    const byId = new Map(folders.map((f) => [f.id, f]));
-    function pathOf(f: FsNode): string {
-      const parts = [f.name];
-      let cur: FsNode | undefined = f;
-      while (cur?.parent_id) {
-        cur = byId.get(cur.parent_id);
-        if (!cur) break;
-        // Skip space-root slug folder name in breadcrumb when possible
-        parts.unshift(cur.name);
-      }
-      return parts.join(" / ");
-    }
-    return folders
-      .slice()
-      .sort((a, b) => pathOf(a).localeCompare(pathOf(b)))
-      .map((f) => ({
-        id: f.id,
-        label: f.passcode_enabled ? `${pathOf(f)} (locked)` : pathOf(f),
-      }));
-  })();
 
   return (
     <dialog
@@ -303,7 +193,7 @@ export function UploadForm({
           <div className="flat-modal-heading min-w-0">
             <h2 className="flat-modal-title">Upload</h2>
             <p className="flat-modal-desc truncate">
-              To {destPlace.name} / {destFolderName}
+              To {destFolderId ? `Main Drive / ${destFolderName}` : "Main Drive"}
             </p>
           </div>
           <button
@@ -318,80 +208,6 @@ export function UploadForm({
         </header>
 
         <div className="flat-modal-body flex-1 overflow-y-auto">
-          <label className="flat-modal-field">
-            <span className="flat-modal-label">Space</span>
-            <select
-              className="flat-input"
-              value={destSpaceId}
-              disabled={busy || destinationOptions.length <= 1}
-              onChange={(e) => {
-                setDestSpaceId(e.target.value);
-                setDestFolderId(null);
-                setCreatingFolder(false);
-                setNewFolderName("");
-              }}
-            >
-              {(destinationOptions.length
-                ? destinationOptions
-                : [destPlace]
-              ).map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flat-modal-field">
-            <span className="flat-modal-label">Folder</span>
-            <select
-              className="flat-input"
-              value={creatingFolder ? "__new__" : (destFolderId ?? "")}
-              disabled={busy || foldersLoading}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === "__new__") {
-                  setCreatingFolder(true);
-                  setDestFolderId(null);
-                  return;
-                }
-                setCreatingFolder(false);
-                setDestFolderId(v || null);
-              }}
-            >
-              <option value="">Space root</option>
-              {folderOptions.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-              <option value="__new__">Create new folder…</option>
-            </select>
-          </label>
-
-          {creatingFolder ? (
-            <div className="flex gap-2 items-end">
-              <label className="flat-modal-field flex-1">
-                <span className="flat-modal-label">New folder name</span>
-                <input
-                  className="flat-input"
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  placeholder="Folder name"
-                  disabled={busy || createFolderBusy}
-                  autoFocus
-                />
-              </label>
-              <Button
-                variant="secondary"
-                disabled={busy || createFolderBusy || !newFolderName.trim()}
-                onClick={() => void createFolderInline()}
-              >
-                {createFolderBusy ? "Creating…" : "Create"}
-              </Button>
-            </div>
-          ) : null}
-
           <div className="flex flex-col gap-1.5">
             <span className="flat-modal-label">Files</span>
             <div className="flex flex-wrap gap-2">
@@ -462,31 +278,12 @@ export function UploadForm({
               </ul>
             ) : (
               <span className="type-caption text-[var(--ink-faint)]">
-                Select multiple files or an entire folder.
+                Select files or a folder.
               </span>
             )}
           </div>
 
-          {inheritParts.length > 0 ? (
-            <div className="surface-2 px-3 py-2">
-              <p className="type-caption text-[var(--ink-soft)]">
-                From folder: {inheritParts.join(" · ")}
-              </p>
-            </div>
-          ) : null}
-
-          <label className="flat-modal-field">
-            <span className="flat-modal-label">Brand</span>
-            <input
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              className="flat-input"
-              disabled={busy}
-              placeholder="Optional"
-            />
-          </label>
-
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5 mt-3">
             <span className="flat-modal-label">Tags</span>
             {tags.length > 0 ? (
               <div className="flex flex-wrap gap-1">
@@ -523,7 +320,7 @@ export function UploadForm({
                     commitDraftTag();
                   }
                 }}
-                placeholder="Type a tag, then Enter"
+                placeholder="Optional — Enter to add"
                 className="flat-input flex-1"
                 disabled={busy}
               />
@@ -537,43 +334,16 @@ export function UploadForm({
             </div>
           </div>
 
-          <label className="flat-modal-field">
+          <label className="flat-modal-field mt-3">
             <span className="flat-modal-label">Description</span>
             <input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="flat-input"
               disabled={busy}
+              placeholder="Optional"
             />
           </label>
-
-          <label className="flat-modal-field">
-            <span className="flat-modal-label">Credit</span>
-            <input
-              value={createdBy}
-              onChange={(e) => setCreatedBy(e.target.value)}
-              className="flat-input"
-              disabled={busy}
-            />
-          </label>
-
-          <div className="flex flex-col gap-1.5">
-            <button
-              type="button"
-              className="type-caption text-left text-[var(--accent)] hover:opacity-80"
-              disabled={busy}
-              onClick={() => setMoreOpen((v) => !v)}
-            >
-              {moreOpen ? "Hide options" : "More options"}
-            </button>
-            {moreOpen ? (
-              <EntityPicker
-                selected={entities}
-                onChange={setEntities}
-                disabled={busy}
-              />
-            ) : null}
-          </div>
 
           {error ? <p className="flat-modal-error">{error}</p> : null}
         </div>
@@ -585,12 +355,7 @@ export function UploadForm({
           <Button
             variant="primary"
             type="submit"
-            disabled={
-              busy ||
-              !serverOnline ||
-              queue.length === 0 ||
-              creatingFolder
-            }
+            disabled={busy || !serverOnline || queue.length === 0}
           >
             {busy
               ? "Starting…"

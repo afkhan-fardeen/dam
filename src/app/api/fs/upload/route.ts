@@ -5,7 +5,6 @@ import {
   grantCreatorEdit,
   joinRelative,
   resolveParentFolder,
-  rpcCanEditNode,
   setFsNodeTags,
 } from "@/lib/fsNodes";
 import {
@@ -56,13 +55,7 @@ export async function POST(request: Request) {
   }
 
   if (parentId) {
-    const canEdit = profile.is_admin || (await rpcCanEditNode(supabase, parentId));
-    if (!canEdit) {
-      return NextResponse.json({ error: "Editors only" }, { status: 403 });
-    }
-  } else if (!profile.is_admin) {
-    // root upload allowed for authenticated; file inherits visibility only via
-    // ancestor grants — root files with no grants are admin-only via RLS
+    // Open drive: any signed-in user may upload into any folder
   }
 
   const targetPath = parentPath ? joinRelative(parentPath, name) : name;
@@ -127,14 +120,6 @@ export async function PUT(request: Request) {
 
   if (!body.session_id || !body.name) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
-  }
-
-  if (body.parent_id) {
-    const canEdit =
-      profile.is_admin || (await rpcCanEditNode(supabase, body.parent_id));
-    if (!canEdit) {
-      return NextResponse.json({ error: "Editors only" }, { status: 403 });
-    }
   }
 
   const postTok = signFsUploadToken();
@@ -207,14 +192,7 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Root-level file with no parent grants: give uploader view/download via a
-  // synthetic folder grant isn't possible on files — grant isn't on files.
-  // Ensure parent folder has creator edit; for root files, admins see via RLS.
-  // If uploaded into a folder the user can edit, visibility inherits.
-  if (!parentId && profile.is_admin === false) {
-    // Create a user grant isn't supported on files in folder_permissions.
-    // Workaround: ensure uploader can see via temporary — skip; require upload into editable folder or be admin for root.
-  }
+  // Open drive: any signed-in user may complete uploads at root or in folders.
 
   if (Array.isArray(body.tags) && body.tags.length) {
     await setFsNodeTags(supabase, node.id, body.tags.map(String), true);

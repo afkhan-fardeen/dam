@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser, logActivity } from "@/lib/auth";
-import {
-  FS_NODE_COLS,
-  rpcCanDownloadNode,
-  rpcCanViewNode,
-} from "@/lib/fsNodes";
+import { FS_NODE_COLS } from "@/lib/fsNodes";
 import { signFileApiToken, buildFileApiUrl } from "@/lib/fileApiAuth";
 
 export const runtime = "nodejs";
@@ -36,24 +32,6 @@ export async function GET(request: Request, context: RouteContext) {
   }
   if (node.node_type !== "file") {
     return NextResponse.json({ error: "Not a file" }, { status: 400 });
-  }
-
-  const canView =
-    profile.is_admin || (await rpcCanViewNode(supabase, id).catch(() => false));
-  if (!canView) {
-    return NextResponse.json({ error: "No access" }, { status: 403 });
-  }
-
-  if (kind === "file") {
-    const canDl =
-      profile.is_admin ||
-      (await rpcCanDownloadNode(supabase, id).catch(() => false));
-    if (!canDl) {
-      return NextResponse.json(
-        { error: "You can view this file, but not download the original." },
-        { status: 403 },
-      );
-    }
   }
 
   const fsPath = kind === "file" ? "/fs/read" : "/fs/thumbnail";

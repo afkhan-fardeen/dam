@@ -14,6 +14,7 @@ import {
   IconPencil,
   IconTrash,
   IconUpload,
+  IconX,
 } from "@tabler/icons-react";
 import { UploadForm } from "@/components/UploadForm";
 import { createClient } from "@/lib/supabase/client";
@@ -68,6 +69,7 @@ export function DriveShell({
     viewMode,
     setViewMode,
     setExplorer,
+    setSelectedNode,
   } = useDriveChrome();
 
   const view = searchParams.get("view") || "files";
@@ -85,8 +87,7 @@ export function DriveShell({
     return profile.is_admin && spaces[0] ? spaces[0].id : null;
   }, [spaces, memberships, profile.is_admin]);
 
-  const showTrash =
-    profile.is_admin || memberships.some((m) => m.role === "editor");
+  const showTrash = true;
 
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [passwordOpen, setPasswordOpen] = useState(false);
@@ -116,7 +117,7 @@ export function DriveShell({
         canUpload: false,
         canDelete: false,
         canRename: false,
-        searchScopeLabel: "Company Files",
+        searchScopeLabel: "Main Drive",
         parentFolderId: null,
       });
     }
@@ -133,7 +134,7 @@ export function DriveShell({
         canUpload: false,
         canDelete: false,
         canRename: false,
-        searchScopeLabel: "Company Files",
+        searchScopeLabel: "Main Drive",
         parentFolderId: null,
       });
     }
@@ -262,7 +263,7 @@ export function DriveShell({
   const uploadSpace = spaces.find((s) => s.id === shellUploadSpaceId) ?? null;
   const uploadFolderId = onHome ? searchParams.get("folder") : null;
   const [uploadFolderName, setUploadFolderName] = useState<string | null>(null);
-  const [uploadSpaceName, setUploadSpaceName] = useState("Company Files");
+  const [uploadSpaceName, setUploadSpaceName] = useState("Main Drive");
 
   useEffect(() => {
     if (!uploadOpen) return;
@@ -274,7 +275,7 @@ export function DriveShell({
     } else {
       setUploadFolderName(null);
     }
-    setUploadSpaceName(uploadSpace?.name || last?.spaceName || "Company Files");
+    setUploadSpaceName(uploadSpace?.name || last?.spaceName || "Main Drive");
   }, [uploadOpen, uploadFolderId, uploadSpace?.name]);
 
   const identityTitle = showExplorerChrome
@@ -283,7 +284,7 @@ export function DriveShell({
       ? "Admin"
       : onSearch
         ? "Search"
-        : "Company Files";
+        : "Main Drive";
 
   const statusText = explorer.selected
     ? `1 item selected`
@@ -364,7 +365,7 @@ export function DriveShell({
             }}
           >
             <IconFolderPlus size={14} stroke={1.75} />
-            New
+            <span className="xp-cmd-label">New</span>
           </button>
           <button
             type="button"
@@ -374,7 +375,7 @@ export function DriveShell({
             onClick={onUploadClick}
           >
             <IconUpload size={14} stroke={1.75} />
-            Upload
+            <span className="xp-cmd-label">Upload</span>
           </button>
           <span className="xp-cmd-sep" aria-hidden />
           <button
@@ -387,7 +388,7 @@ export function DriveShell({
             onClick={() => explorerActions?.deleteSelection()}
           >
             <IconTrash size={14} stroke={1.75} />
-            Delete
+            <span className="xp-cmd-label">Delete</span>
           </button>
           <button
             type="button"
@@ -397,7 +398,7 @@ export function DriveShell({
             onClick={() => explorerActions?.renameSelection()}
           >
             <IconPencil size={14} stroke={1.75} />
-            Rename
+            <span className="xp-cmd-label">Rename</span>
           </button>
         </div>
       ) : null}
@@ -529,18 +530,32 @@ export function DriveShell({
         </div>
 
         {showExplorerChrome && explorer.selected ? (
-          <div
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <ExplorerDetails
-              node={explorer.selected}
-              canEditTags={
-                Boolean(explorer.canCreate || explorer.selected.can_edit) &&
-                view !== "trash"
-              }
+          <>
+            <button
+              type="button"
+              className="xp-details-sheet-scrim"
+              aria-label="Close details"
+              onClick={() => setSelectedNode(null)}
             />
-          </div>
+            <div
+              className="xp-details-panel relative"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="xp-nav-btn xp-details-close"
+                aria-label="Close details"
+                onClick={() => setSelectedNode(null)}
+              >
+                <IconX size={16} />
+              </button>
+              <ExplorerDetails
+                node={explorer.selected}
+                canEditTags={view !== "trash"}
+              />
+            </div>
+          </>
         ) : null}
       </div>
 

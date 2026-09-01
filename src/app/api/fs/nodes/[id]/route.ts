@@ -8,7 +8,6 @@ import {
   grantCreatorEdit,
   joinRelative,
   parentRelativePath,
-  rpcCanEditNode,
   setFsNodeTags,
 } from "@/lib/fsNodes";
 import {
@@ -42,9 +41,9 @@ export async function GET(request: Request, context: RouteContext) {
   }
   let [node] = await attachFsNodeTags(supabase, [data as FsNode]);
   [node] = await attachFsFavorites(supabase, effectiveUserId, [node]);
-  const canEdit =
-    profile.is_admin || (await rpcCanEditNode(supabase, id).catch(() => false));
-  return NextResponse.json({ node: { ...node, can_edit: canEdit } });
+  return NextResponse.json({
+    node: { ...node, can_edit: true, can_download: true },
+  });
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -71,12 +70,6 @@ export async function PATCH(request: Request, context: RouteContext) {
     .maybeSingle();
   if (error || !node) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const canEdit =
-    profile.is_admin || (await rpcCanEditNode(supabase, id).catch(() => false));
-  if (!canEdit) {
-    return NextResponse.json({ error: "Editors only" }, { status: 403 });
   }
 
   try {
@@ -249,12 +242,6 @@ export async function DELETE(request: Request, context: RouteContext) {
     .maybeSingle();
   if (error || !node) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const canEdit =
-    profile.is_admin || (await rpcCanEditNode(supabase, id).catch(() => false));
-  if (!canEdit) {
-    return NextResponse.json({ error: "Editors only" }, { status: 403 });
   }
 
   try {

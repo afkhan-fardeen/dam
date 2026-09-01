@@ -169,14 +169,13 @@ export function ExplorerNavPane({
             ) : null}
 
             <div className="xp-nav-section">
-              <div className="xp-nav-label">This PC</div>
               <button
                 type="button"
                 className={`xp-nav-item${rootActive ? " is-active" : ""}`}
                 onClick={() => go("/")}
               >
                 <FolderGlyph size={14} />
-                Company Files
+                Main Drive
               </button>
               <button
                 type="button"

@@ -4,14 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   IconDots,
-  IconDownload,
-  IconStar,
-  IconStarFilled,
-  IconTrash,
   IconX,
 } from "@tabler/icons-react";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import {
+  ExplorerContextMenu,
+  type ExplorerMenuItem,
+} from "@/components/explorer/ExplorerContextMenu";
 import { FolderGlyph } from "@/components/explorer/FolderGlyph";
 import { uploadFsFileWithProgress } from "@/lib/fsUpload";
 import type { FsNode } from "@/lib/types";
@@ -51,24 +51,28 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
 
   const [nodes, setNodes] = useState<FsNode[]>([]);
   const [ancestors, setAncestors] = useState<FsNode[]>([]);
-  const [parentCanEdit, setParentCanEdit] = useState(isAdmin);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [menuNode, setMenuNode] = useState<FsNode | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    node: FsNode | null;
+  } | null>(null);
   const [renameNode, setRenameNode] = useState<FsNode | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [trashTarget, setTrashTarget] = useState<FsNode | null>(null);
-  const [permNode, setPermNode] = useState<FsNode | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastUploadReq = useRef(0);
   const lastFolderReq = useRef(0);
   const selectedRef = useRef<FsNode | null>(null);
 
-  const editable = isAdmin || parentCanEdit;
+  // Open drive: every signed-in user has full create/upload/delete rights
+  const editable = true;
   const inTrash = view === "trash";
+  void isAdmin;
 
   useEffect(() => {
     selectedRef.current = explorer.selected;
@@ -94,27 +98,23 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
       if (folderId && !inTrash) {
         const chain: FsNode[] = [];
         let cur: string | null = folderId;
-        let edit = isAdmin;
         while (cur) {
           const r: Response = await fetch(`/api/fs/nodes/${cur}`);
-          const j: { node?: FsNode & { can_edit?: boolean } } = await r.json();
+          const j: { node?: FsNode } = await r.json();
           if (!r.ok || !j.node) break;
           chain.unshift(j.node);
-          if (cur === folderId) edit = Boolean(j.node.can_edit) || isAdmin;
           cur = j.node.parent_id;
         }
         setAncestors(chain);
-        setParentCanEdit(edit);
       } else {
         setAncestors([]);
-        setParentCanEdit(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Load failed");
     } finally {
       setLoading(false);
     }
-  }, [folderId, inTrash, isAdmin]);
+  }, [folderId, inTrash]);
 
   useEffect(() => {
     void load();
@@ -131,11 +131,11 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     const current = ancestors[ancestors.length - 1] ?? null;
     const title = inTrash
       ? "Recycle Bin"
-      : current?.name || "Company Files";
+      : current?.name || "Main Drive";
     const crumbs = inTrash
       ? [{ id: null, label: "Recycle Bin" }]
       : [
-          { id: null, label: "Company Files" },
+          { id: null, label: "Main Drive" },
           ...ancestors.map((a) => ({ id: a.id, label: a.name })),
         ];
     const parentFolderId =
@@ -460,10 +460,104 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     );
   }
 
+  function openItemMenu(e: React.MouseEvent, node: FsNode) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectNode(node);
+    setCtxMenu({ x: e.clientX, y: e.clientY, node });
+  }
+
+  function openEmptyMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedNode(null);
+    setCtxMenu({ x: e.clientX, y: e.clientY, node: null });
+  }
+
+  function ctxItems(): ExplorerMenuItem[] {
+    if (!ctxMenu) return [];
+    const node = ctxMenu.node;
+    if (!node) {
+      return [
+        {
+          id: "new",
+          label: "New folder",
+          disabled: !editable || inTrash,
+          onSelect: () => {
+            setNewFolderOpen(true);
+            setNewFolderName("");
+          },
+        },
+        {
+          id: "upload",
+          label: "Upload",
+          disabled: !editable || inTrash || !serverOnline,
+          onSelect: () => fileInputRef.current?.click(),
+        },
+        { id: "sep-r", label: "", separator: true },
+        {
+          id: "refresh",
+          label: "Refresh",
+          onSelect: () => void load(),
+        },
+      ];
+    }
+    const items: ExplorerMenuItem[] = [];
+    if (node.node_type === "folder" && !inTrash) {
+      items.push({
+        id: "open",
+        label: "Open",
+        onSelect: () => openFolder(node.id),
+      });
+    }
+    if (node.node_type === "file" && !inTrash) {
+      items.push({
+        id: "download",
+        label: "Download",
+        onSelect: () => downloadNode(node),
+      });
+    }
+    if (!inTrash) {
+      items.push({
+        id: "star",
+        label: node.favorited ? "Unstar" : "Star",
+        onSelect: () => void toggleFavorite(node),
+      });
+    }
+    if (editable && !inTrash) {
+      items.push({
+        id: "rename",
+        label: "Rename",
+        onSelect: () => {
+          setRenameValue(node.name);
+          setRenameNode(node);
+        },
+      });
+    }
+    if (inTrash && editable) {
+      items.push({
+        id: "restore",
+        label: "Restore",
+        onSelect: () => void restoreNode(node),
+      });
+    }
+    if (editable || inTrash) {
+      items.push({ id: "sep-d", label: "", separator: true });
+      items.push({
+        id: "delete",
+        label: inTrash ? "Delete permanently" : "Move to Recycle Bin",
+        danger: true,
+        onSelect: () => setTrashTarget(node),
+      });
+    }
+    return items;
+  }
+
   return (
     <div
       className="h-full min-h-0 flex flex-col"
       onClick={() => setSelectedNode(null)}
+      onContextMenu={openEmptyMenu}
       onDragOver={(e) => {
         e.preventDefault();
         if (editable && !inTrash) setDragging(true);
@@ -518,12 +612,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
               className={`xp-tile${selectedId === node.id ? " is-selected" : ""}`}
               onClick={(e) => onItemClick(e, node)}
               onDoubleClick={() => onItemDoubleClick(node)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                selectNode(node);
-                setMenuNode(node);
-              }}
+              onContextMenu={(e) => openItemMenu(e, node)}
             >
               <div className="xp-tile-icon">{renderIcon(node, 40)}</div>
               <div className="xp-tile-name">{node.name}</div>
@@ -535,9 +624,15 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
           <thead>
             <tr>
               <th style={{ width: "42%" }}>Name</th>
-              <th style={{ width: "22%" }}>Date modified</th>
-              <th style={{ width: "18%" }}>Type</th>
-              <th style={{ width: "12%" }}>Size</th>
+              <th className="xp-col-date" style={{ width: "22%" }}>
+                Date modified
+              </th>
+              <th className="xp-col-type" style={{ width: "18%" }}>
+                Type
+              </th>
+              <th className="xp-col-size" style={{ width: "12%" }}>
+                Size
+              </th>
               <th style={{ width: "6%" }} />
             </tr>
           </thead>
@@ -548,12 +643,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
                 className={`xp-row${selectedId === node.id ? " is-selected" : ""}`}
                 onClick={(e) => onItemClick(e, node)}
                 onDoubleClick={() => onItemDoubleClick(node)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  selectNode(node);
-                  setMenuNode(node);
-                }}
+                onContextMenu={(e) => openItemMenu(e, node)}
               >
                 <td>
                   <span className="xp-name-cell">
@@ -561,11 +651,13 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
                     <span>{node.name}</span>
                   </span>
                 </td>
-                <td>{formatModified(node.updated_at || node.created_at)}</td>
-                <td>
+                <td className="xp-col-date">
+                  {formatModified(node.updated_at || node.created_at)}
+                </td>
+                <td className="xp-col-type">
                   {fileTypeLabel(node.node_type, node.mime_type, node.name)}
                 </td>
-                <td>
+                <td className="xp-col-size">
                   {node.node_type === "folder"
                     ? ""
                     : formatBytes(node.size_bytes)}
@@ -577,8 +669,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
                     aria-label="More"
                     onClick={(e) => {
                       e.stopPropagation();
-                      selectNode(node);
-                      setMenuNode(node);
+                      openItemMenu(e, node);
                     }}
                   >
                     <IconDots size={14} />
@@ -590,113 +681,13 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
         </table>
       )}
 
-      {menuNode ? (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-xs p-2">
-            <ul className="menu">
-              {menuNode.node_type === "file" && !inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      downloadNode(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    <IconDownload size={16} /> Download
-                  </button>
-                </li>
-              ) : null}
-              {!inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void toggleFavorite(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    {menuNode.favorited ? (
-                      <IconStarFilled size={16} />
-                    ) : (
-                      <IconStar size={16} />
-                    )}
-                    {menuNode.favorited ? "Unstar" : "Star"}
-                  </button>
-                </li>
-              ) : null}
-              {editable && !inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRenameValue(menuNode.name);
-                      setRenameNode(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    Rename
-                  </button>
-                </li>
-              ) : null}
-              {editable && menuNode.node_type === "folder" && !inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPermNode(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    Permissions
-                  </button>
-                </li>
-              ) : null}
-              {inTrash && editable ? (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void restoreNode(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    Restore
-                  </button>
-                </li>
-              ) : null}
-              {editable || inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    className="text-error"
-                    onClick={() => {
-                      setTrashTarget(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    <IconTrash size={16} />
-                    {inTrash ? "Delete permanently" : "Move to trash"}
-                  </button>
-                </li>
-              ) : null}
-            </ul>
-            <form method="dialog" className="px-2 pb-2">
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm w-full"
-                onClick={() => setMenuNode(null)}
-              >
-                Close
-              </button>
-            </form>
-          </div>
-          <form method="dialog" className="modal-backdrop">
-            <button type="button" onClick={() => setMenuNode(null)}>
-              close
-            </button>
-          </form>
-        </dialog>
+      {ctxMenu ? (
+        <ExplorerContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={ctxItems()}
+          onClose={() => setCtxMenu(null)}
+        />
       ) : null}
 
       {newFolderOpen ? (
@@ -766,13 +757,6 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
         </dialog>
       ) : null}
 
-      {permNode ? (
-        <FolderPermissionsModal
-          node={permNode}
-          onClose={() => setPermNode(null)}
-        />
-      ) : null}
-
       {trashTarget ? (
         <ConfirmModal
           title={inTrash ? "Delete permanently?" : "Move to Recycle Bin?"}
@@ -788,183 +772,5 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
         />
       ) : null}
     </div>
-  );
-}
-
-function FolderPermissionsModal({
-  node,
-  onClose,
-}: {
-  node: FsNode;
-  onClose: () => void;
-}) {
-  const [rows, setRows] = useState<
-    {
-      id: string;
-      principal_type: string;
-      principal_id: string | null;
-      level: string;
-    }[]
-  >([]);
-  const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
-  const [level, setLevel] = useState("view");
-  const [groupId, setGroupId] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      const [pRes, gRes] = await Promise.all([
-        fetch(`/api/fs/nodes/${node.id}/permissions`),
-        fetch("/api/admin/groups").catch(() => null),
-      ]);
-      const pj = await pRes.json();
-      if (pRes.ok) setRows(pj.permissions ?? []);
-      if (gRes?.ok) {
-        const gj = await gRes.json();
-        setGroups(gj.groups ?? []);
-        if (gj.groups?.[0]) setGroupId(gj.groups[0].id);
-      }
-    })();
-  }, [node.id]);
-
-  async function addEveryone() {
-    setError(null);
-    const res = await fetch(`/api/fs/nodes/${node.id}/permissions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        principal_type: "everyone",
-        level,
-      }),
-    });
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || "Failed");
-      return;
-    }
-    setRows((prev) => [
-      ...prev.filter((r) => r.principal_type !== "everyone"),
-      json.permission,
-    ]);
-  }
-
-  async function addGroup() {
-    if (!groupId) return;
-    setError(null);
-    const res = await fetch(`/api/fs/nodes/${node.id}/permissions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        principal_type: "group",
-        principal_id: groupId,
-        level,
-      }),
-    });
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error || "Failed");
-      return;
-    }
-    setRows((prev) => [...prev, json.permission]);
-  }
-
-  async function remove(id: string) {
-    await fetch(
-      `/api/fs/nodes/${node.id}/permissions?permission_id=${encodeURIComponent(id)}`,
-      { method: "DELETE" },
-    );
-    setRows((prev) => prev.filter((r) => r.id !== id));
-  }
-
-  return (
-    <dialog className="modal modal-open">
-      <div className="modal-box max-w-lg">
-        <h3 className="font-bold">Permissions — {node.name}</h3>
-        <p className="mt-1 text-sm text-base-content/60">
-          Explicit grants on this folder override ancestors. Default is deny.
-        </p>
-        {error ? <p className="mt-2 text-sm text-error">{error}</p> : null}
-        <ul className="mt-3 space-y-1 text-sm">
-          {rows.length === 0 ? (
-            <li className="text-base-content/50">
-              No grants yet (creator + admins only).
-            </li>
-          ) : (
-            rows.map((r) => (
-              <li
-                key={r.id}
-                className="flex items-center justify-between gap-2"
-              >
-                <span>
-                  {r.principal_type}
-                  {r.principal_id ? ` · ${r.principal_id.slice(0, 8)}…` : ""} ·{" "}
-                  {r.level}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs"
-                  onClick={() => void remove(r.id)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-        <div className="mt-4 flex flex-wrap items-end gap-2">
-          <label className="form-control">
-            <span className="label-text text-xs">Level</span>
-            <select
-              className="select select-bordered select-sm"
-              value={level}
-              onChange={(e) => setLevel(e.target.value)}
-            >
-              <option value="view">view</option>
-              <option value="download">download</option>
-              <option value="edit">edit</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => void addEveryone()}
-          >
-            Add Everyone
-          </button>
-          {groups.length > 0 ? (
-            <>
-              <select
-                className="select select-bordered select-sm"
-                value={groupId}
-                onChange={(e) => setGroupId(e.target.value)}
-              >
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => void addGroup()}
-              >
-                Add group
-              </button>
-            </>
-          ) : null}
-        </div>
-        <div className="modal-action">
-          <button type="button" className="btn" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-      <form method="dialog" className="modal-backdrop">
-        <button type="button" onClick={onClose}>
-          close
-        </button>
-      </form>
-    </dialog>
   );
 }

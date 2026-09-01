@@ -8,7 +8,6 @@ import {
   joinRelative,
   listFsChildren,
   resolveParentFolder,
-  rpcCanEditNode,
 } from "@/lib/fsNodes";
 import { fsMkdir } from "@/lib/fsClient";
 import type { FsNode } from "@/lib/types";
@@ -51,13 +50,6 @@ export async function GET(request: Request) {
     nodes = (data ?? []) as FsNode[];
   } else {
     try {
-      if (parentIdParam) {
-        const ok = await rpcCanEditNode(supabase, parentIdParam).catch(() =>
-          false,
-        );
-        // View is enough to list; use can_view via select RLS — just fetch children
-        void ok;
-      }
       nodes = await listFsChildren(supabase, {
         parentId: parentIdParam || null,
       });
@@ -106,12 +98,7 @@ export async function POST(request: Request) {
   }
 
   if (parentId) {
-    const canEdit = profile.is_admin || (await rpcCanEditNode(supabase, parentId));
-    if (!canEdit) {
-      return NextResponse.json({ error: "Editors only" }, { status: 403 });
-    }
-  } else if (!profile.is_admin) {
-    // Root create: any authenticated user (RLS allows); they become sole editor via grant
+    // Open drive: any signed-in user may create in any folder
   }
 
   const relativePath = parentPath ? joinRelative(parentPath, name) : name;

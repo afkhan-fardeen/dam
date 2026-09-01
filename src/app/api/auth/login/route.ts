@@ -15,7 +15,7 @@ function publicAuthError(message: string, code?: string): string {
     lower.includes("invalid login") ||
     lower.includes("invalid credentials")
   ) {
-    return "Could not sign in. Check your email and password.";
+    return "Wrong password.";
   }
   if (lower.includes("email not confirmed")) {
     return "Email is not confirmed yet. Ask an admin to confirm the account.";
@@ -23,7 +23,7 @@ function publicAuthError(message: string, code?: string): string {
   if (lower.includes("too many requests")) {
     return "Too many sign-in attempts. Wait a minute and try again.";
   }
-  return message || "Could not sign in.";
+  return message || "Could not unlock.";
 }
 
 export async function POST(request: NextRequest) {
@@ -40,6 +40,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const portalEmail = process.env.PORTAL_LOGIN_EMAIL?.trim().toLowerCase();
+  if (!portalEmail) {
+    return NextResponse.json(
+      {
+        error:
+          "Portal unlock is not configured. Set PORTAL_LOGIN_EMAIL on the server.",
+        code: "missing_portal_email",
+      },
+      { status: 503 },
+    );
+  }
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -47,11 +59,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  const email = body.email?.trim().toLowerCase() ?? "";
+  const email = (body.email?.trim().toLowerCase() || portalEmail);
   const password = body.password ?? "";
-  if (!email || !password) {
+  if (!password) {
     return NextResponse.json(
-      { error: "Enter your email and password." },
+      { error: "Enter your password.", code: "missing_password" },
       { status: 400 },
     );
   }
@@ -84,6 +96,10 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
+      console.error("[auth/login]", {
+        code: error.code ?? "auth_error",
+        message: error.message,
+      });
       return NextResponse.json(
         {
           error: publicAuthError(error.message, error.code),
@@ -103,9 +119,13 @@ export async function POST(request: NextRequest) {
 
       if (profile && profile.is_active === false) {
         await supabase.auth.signOut();
+        console.error("[auth/login]", {
+          code: "invalid_credentials",
+          message: "Account deactivated",
+        });
         return NextResponse.json(
           {
-            error: "Could not sign in. Check your email and password.",
+            error: "Wrong password.",
             code: "invalid_credentials",
           },
           { status: 401 },
@@ -117,6 +137,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Sign-in failed unexpectedly.";
+    console.error("[auth/login]", { code: "server_error", message });
     return NextResponse.json(
       { error: message, code: "server_error" },
       { status: 500 },

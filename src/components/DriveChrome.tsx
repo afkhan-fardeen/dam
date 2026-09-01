@@ -105,15 +105,15 @@ type DriveChromeContextValue = {
 };
 
 const defaultExplorer: ExplorerSurface = {
-  title: "Company Files",
-  crumbs: [{ id: null, label: "Company Files" }],
+  title: "Main Drive",
+  crumbs: [{ id: null, label: "Main Drive" }],
   selected: null,
   itemCount: 0,
   canCreate: false,
   canUpload: false,
   canDelete: false,
   canRename: false,
-  searchScopeLabel: "Company Files",
+  searchScopeLabel: "Main Drive",
   parentFolderId: null,
 };
 

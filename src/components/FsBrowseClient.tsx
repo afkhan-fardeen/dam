@@ -4,13 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   IconDots,
-  IconDownload,
-  IconStar,
-  IconStarFilled,
-  IconTrash,
   IconX,
 } from "@tabler/icons-react";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import {
+  ExplorerContextMenu,
+  type ExplorerMenuItem,
+} from "@/components/explorer/ExplorerContextMenu";
 import { FolderGlyph } from "@/components/explorer/FolderGlyph";
 import { useDriveChrome } from "@/components/DriveChrome";
 import type { FsNode } from "@/lib/types";
@@ -25,7 +25,7 @@ type Props = {
   isAdmin: boolean;
 };
 
-export function FsBrowseClient({ isAdmin }: Props) {
+export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = searchParams.get("view") || "all";
@@ -46,7 +46,11 @@ export function FsBrowseClient({ isAdmin }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [trashTarget, setTrashTarget] = useState<FsNode | null>(null);
-  const [menuNode, setMenuNode] = useState<FsNode | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    x: number;
+    y: number;
+    node: FsNode | null;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const selectedRef = useRef<FsNode | null>(null);
 
@@ -107,7 +111,7 @@ export function FsBrowseClient({ isAdmin }: Props) {
       itemCount: nodes.length,
       canCreate: false,
       canUpload: false,
-      canDelete: Boolean(explorer.selected) && (isAdmin || inTrash),
+      canDelete: Boolean(explorer.selected),
       canRename: false,
       searchScopeLabel: title,
       parentFolderId: null,
@@ -117,7 +121,6 @@ export function FsBrowseClient({ isAdmin }: Props) {
     nodes.length,
     setExplorer,
     explorer.selected,
-    isAdmin,
     inTrash,
   ]);
 
@@ -130,7 +133,6 @@ export function FsBrowseClient({ isAdmin }: Props) {
       deleteSelection: () => {
         const n = selectedRef.current;
         if (!n) return;
-        if (!(isAdmin || inTrash)) return;
         setTrashTarget(n);
       },
       renameSelection: () => {
@@ -138,12 +140,12 @@ export function FsBrowseClient({ isAdmin }: Props) {
       },
     });
     return () => registerExplorerActions(null);
-  }, [registerExplorerActions, isAdmin, inTrash]);
+  }, [registerExplorerActions]);
 
   function selectNode(node: FsNode) {
     setExplorer({
       selected: node,
-      canDelete: isAdmin || inTrash,
+      canDelete: true,
       canRename: false,
     });
   }
@@ -301,10 +303,75 @@ export function FsBrowseClient({ isAdmin }: Props) {
     );
   }
 
+  function openItemMenu(e: React.MouseEvent, node: FsNode) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectNode(node);
+    setCtxMenu({ x: e.clientX, y: e.clientY, node });
+  }
+
+  function openEmptyMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedNode(null);
+    setCtxMenu({ x: e.clientX, y: e.clientY, node: null });
+  }
+
+  function ctxItems(): ExplorerMenuItem[] {
+    if (!ctxMenu) return [];
+    const node = ctxMenu.node;
+    if (!node) {
+      return [
+        {
+          id: "refresh",
+          label: "Refresh",
+          onSelect: () => void load(),
+        },
+      ];
+    }
+    const items: ExplorerMenuItem[] = [];
+    items.push({
+      id: "open",
+      label: "Open",
+      onSelect: () => openNode(node),
+    });
+    if (node.node_type === "file" && !inTrash) {
+      items.push({
+        id: "download",
+        label: "Download",
+        onSelect: () => downloadNode(node),
+      });
+    }
+    if (!inTrash) {
+      items.push({
+        id: "star",
+        label: node.favorited ? "Unstar" : "Star",
+        onSelect: () => void toggleFavorite(node),
+      });
+    }
+    if (inTrash) {
+      items.push({
+        id: "restore",
+        label: "Restore",
+        disabled: busy,
+        onSelect: () => void restoreNode(node),
+      });
+    }
+    items.push({ id: "sep-d", label: "", separator: true });
+    items.push({
+      id: "delete",
+      label: inTrash ? "Delete permanently" : "Move to Recycle Bin",
+      danger: true,
+      onSelect: () => setTrashTarget(node),
+    });
+    return items;
+  }
+
   return (
     <div
       className="h-full min-h-0 flex flex-col"
       onClick={() => setSelectedNode(null)}
+      onContextMenu={openEmptyMenu}
     >
       {error ? (
         <div className="mx-3 mt-2 flex items-center gap-2 rounded border border-[var(--danger)] bg-[#fff5f4] px-3 py-2 text-[12px]">
@@ -337,12 +404,7 @@ export function FsBrowseClient({ isAdmin }: Props) {
                 selectNode(node);
               }}
               onDoubleClick={() => openNode(node)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                selectNode(node);
-                setMenuNode(node);
-              }}
+              onContextMenu={(e) => openItemMenu(e, node)}
             >
               <div className="xp-tile-icon">{renderIcon(node, 40)}</div>
               <div className="xp-tile-name">{node.name}</div>
@@ -354,9 +416,15 @@ export function FsBrowseClient({ isAdmin }: Props) {
           <thead>
             <tr>
               <th style={{ width: "42%" }}>Name</th>
-              <th style={{ width: "22%" }}>Date modified</th>
-              <th style={{ width: "18%" }}>Type</th>
-              <th style={{ width: "12%" }}>Size</th>
+              <th className="xp-col-date" style={{ width: "22%" }}>
+                Date modified
+              </th>
+              <th className="xp-col-type" style={{ width: "18%" }}>
+                Type
+              </th>
+              <th className="xp-col-size" style={{ width: "12%" }}>
+                Size
+              </th>
               <th style={{ width: "6%" }} />
             </tr>
           </thead>
@@ -370,12 +438,7 @@ export function FsBrowseClient({ isAdmin }: Props) {
                   selectNode(node);
                 }}
                 onDoubleClick={() => openNode(node)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  selectNode(node);
-                  setMenuNode(node);
-                }}
+                onContextMenu={(e) => openItemMenu(e, node)}
               >
                 <td>
                   <span className="xp-name-cell">
@@ -383,11 +446,13 @@ export function FsBrowseClient({ isAdmin }: Props) {
                     <span>{node.name}</span>
                   </span>
                 </td>
-                <td>{formatModified(node.updated_at || node.created_at)}</td>
-                <td>
+                <td className="xp-col-date">
+                  {formatModified(node.updated_at || node.created_at)}
+                </td>
+                <td className="xp-col-type">
                   {fileTypeLabel(node.node_type, node.mime_type, node.name)}
                 </td>
-                <td>
+                <td className="xp-col-size">
                   {node.node_type === "folder"
                     ? ""
                     : formatBytes(node.size_bytes)}
@@ -399,8 +464,7 @@ export function FsBrowseClient({ isAdmin }: Props) {
                     aria-label="More"
                     onClick={(e) => {
                       e.stopPropagation();
-                      selectNode(node);
-                      setMenuNode(node);
+                      openItemMenu(e, node);
                     }}
                   >
                     <IconDots size={14} />
@@ -412,87 +476,13 @@ export function FsBrowseClient({ isAdmin }: Props) {
         </table>
       )}
 
-      {menuNode ? (
-        <dialog className="modal modal-open">
-          <div className="modal-box max-w-xs p-2">
-            <ul className="menu">
-              {menuNode.node_type === "file" && !inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      downloadNode(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    <IconDownload size={16} /> Download
-                  </button>
-                </li>
-              ) : null}
-              {!inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void toggleFavorite(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    {menuNode.favorited ? (
-                      <IconStarFilled size={16} />
-                    ) : (
-                      <IconStar size={16} />
-                    )}
-                    {menuNode.favorited ? "Unstar" : "Star"}
-                  </button>
-                </li>
-              ) : null}
-              {inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      void restoreNode(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    Restore
-                  </button>
-                </li>
-              ) : null}
-              {isAdmin || inTrash ? (
-                <li>
-                  <button
-                    type="button"
-                    className="text-error"
-                    onClick={() => {
-                      setTrashTarget(menuNode);
-                      setMenuNode(null);
-                    }}
-                  >
-                    <IconTrash size={16} />
-                    {inTrash ? "Delete permanently" : "Move to trash"}
-                  </button>
-                </li>
-              ) : null}
-            </ul>
-            <form method="dialog" className="px-2 pb-2">
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm w-full"
-                onClick={() => setMenuNode(null)}
-              >
-                Close
-              </button>
-            </form>
-          </div>
-          <form method="dialog" className="modal-backdrop">
-            <button type="button" onClick={() => setMenuNode(null)}>
-              close
-            </button>
-          </form>
-        </dialog>
+      {ctxMenu ? (
+        <ExplorerContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          items={ctxItems()}
+          onClose={() => setCtxMenu(null)}
+        />
       ) : null}
 
       {trashTarget ? (

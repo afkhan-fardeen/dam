@@ -33,6 +33,9 @@
   --win-selected-border: #cce4f7;
   --win-accent: #0078d4;
   --folder-yellow: #ffca6b;
+  --xp-fs-base: 14px;
+  --xp-fs-ui: 13px;
+  --xp-fs-meta: 12px;
 
   --bg: var(--win-bg);
   --surface: var(--win-surface);
@@ -90,7 +93,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-flat);
-  font-size: 13px;
+  font-size: var(--xp-fs-base);
   line-height: 1.4;
   font-weight: 400;
   min-height: 100vh;
@@ -1309,11 +1312,11 @@ select:focus-visible {
 
 /* Login page */
 .login-page {
-  --login-green: #4aba7a;
-  --login-green-hover: #3fa56c;
-  --login-green-active: #35945e;
-  --login-card-bg: #fafafa;
-  --login-line: rgba(60, 60, 67, 0.12);
+  --login-green: var(--win-accent, #0078d4);
+  --login-green-hover: #106ebe;
+  --login-green-active: #005a9e;
+  --login-card-bg: var(--win-surface, #ffffff);
+  --login-line: var(--win-border, #e3e3e3);
   position: relative;
   display: flex;
   align-items: center;
@@ -1333,6 +1336,61 @@ select:focus-visible {
   font-family: var(--font-flat);
   font-weight: 400;
   box-sizing: border-box;
+}
+
+.unlock-page {
+  background:
+    radial-gradient(120% 80% at 50% 0%, #e8f2fb 0%, transparent 55%),
+    var(--win-bg, #f3f3f3);
+}
+
+.unlock-card {
+  align-items: center;
+  text-align: center;
+  gap: 1rem !important;
+  max-width: 360px;
+  width: min(100%, 360px);
+}
+
+.unlock-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--win-selected, #e5f0fb);
+  border: 1px solid var(--win-selected-border, #cce4f7);
+  color: var(--win-accent, #0078d4);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.unlock-header {
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.unlock-name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.unlock-caption {
+  color: var(--ink-soft);
+}
+
+.unlock-card .login-field {
+  width: 100%;
+  text-align: left;
+}
+
+.unlock-card .login-submit {
+  width: 100%;
 }
 
 .login-brand {
@@ -4234,7 +4292,7 @@ select:focus-visible {
 }
 
 .xp-identity-title {
-  font-size: 14px;
+  font-size: var(--xp-fs-base);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -4247,21 +4305,28 @@ select:focus-visible {
   padding: 4px 10px;
   background: var(--win-surface);
   border-bottom: 1px solid var(--win-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.xp-cmdbar::-webkit-scrollbar {
+  display: none;
 }
 
 .xp-cmd {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--xp-fs-ui);
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .xp-cmd:hover:not(:disabled) {
@@ -4328,7 +4393,7 @@ select:focus-visible {
   background: var(--win-surface);
   overflow: hidden;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--xp-fs-ui);
 }
 
 .xp-breadcrumb button {
@@ -4364,7 +4429,7 @@ select:focus-visible {
   border-radius: 5px;
   background: var(--win-surface);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--xp-fs-ui);
 }
 
 .xp-search:focus {
@@ -4394,7 +4459,7 @@ select:focus-visible {
 
 .xp-nav-label {
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: var(--xp-fs-meta);
   font-weight: 600;
   color: var(--ink-soft);
   text-transform: none;
@@ -4405,14 +4470,14 @@ select:focus-visible {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 30px;
+  height: 32px;
   padding: 0 8px;
   border: 1px solid transparent;
   border-radius: 5px;
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--xp-fs-ui);
   text-align: left;
   cursor: pointer;
 }
@@ -4464,7 +4529,7 @@ select:focus-visible {
   padding: 0 10px;
   border-top: 1px solid var(--win-border);
   background: var(--win-bg);
-  font-size: 11px;
+  font-size: var(--xp-fs-meta);
   color: var(--ink-soft);
 }
 
@@ -4496,7 +4561,7 @@ select:focus-visible {
 .xp-list {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--xp-fs-ui);
 }
 
 .xp-list thead th {
@@ -4590,7 +4655,7 @@ select:focus-visible {
 
 .xp-tile-name {
   width: 100%;
-  font-size: 12px;
+  font-size: var(--xp-fs-meta);
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -4614,10 +4679,64 @@ select:focus-visible {
   padding: 48px 24px;
   text-align: center;
   color: var(--ink-soft);
-  font-size: 13px;
+  font-size: var(--xp-fs-ui);
 }
 
 .xp-mobile-nav-btn {
+  display: none;
+}
+
+.xp-ctx {
+  position: fixed;
+  z-index: 80;
+  min-width: 180px;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 4px;
+  border: 1px solid var(--win-border);
+  border-radius: 6px;
+  background: var(--win-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  font-size: var(--xp-fs-ui);
+}
+
+.xp-ctx-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--xp-fs-ui);
+  cursor: pointer;
+}
+
+.xp-ctx-item:hover:not(:disabled) {
+  background: var(--win-hover);
+}
+
+.xp-ctx-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.xp-ctx-item.is-danger {
+  color: var(--danger);
+}
+
+.xp-ctx-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--win-border);
+}
+
+.xp-details-sheet-scrim {
+  display: none;
+}
+
+.xp-details-close {
   display: none;
 }
 
@@ -4643,10 +4762,93 @@ select:focus-visible {
   .xp-nav-scrim.is-open {
     display: block;
   }
-  .xp-details {
-    display: none;
-  }
   .xp-mobile-nav-btn {
     display: inline-flex;
+  }
+  .xp-details-sheet-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(0, 0, 0, 0.28);
+  }
+  .xp-details-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    max-height: min(72vh, 560px);
+    overflow: auto;
+    border-radius: 12px 12px 0 0;
+    border: 1px solid var(--win-border);
+    border-bottom: 0;
+    background: var(--win-surface);
+    box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.14);
+  }
+  .xp-details-panel .xp-details {
+    display: block;
+    width: 100%;
+    border-left: 0;
+  }
+  .xp-details-close {
+    display: inline-flex;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .xp-cmd span.xp-cmd-label {
+    display: none;
+  }
+  .xp-cmd {
+    min-width: 40px;
+    min-height: 40px;
+    justify-content: center;
+    padding: 0 8px;
+  }
+  .xp-addr {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 8px 8px;
+  }
+  .xp-breadcrumb {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+  .xp-search {
+    order: 4;
+    flex: 1 1 100%;
+    width: 100%;
+    min-height: 40px;
+    font-size: 16px;
+  }
+  .xp-nav-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .xp-col-date,
+  .xp-col-type {
+    display: none;
+  }
+  .xp-grid {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 6px;
+    padding: 8px;
+  }
+  .xp-view-toggle button {
+    width: 40px;
+    height: 36px;
+  }
+  .xp-list {
+    font-size: var(--xp-fs-ui);
+  }
+  .flat-input,
+  .input {
+    font-size: 16px !important;
   }
 }
