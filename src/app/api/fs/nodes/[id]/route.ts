@@ -74,7 +74,13 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     if (body.restore) {
-      await fsRestore(node.relative_path);
+      try {
+        await fsRestore(node.relative_path);
+      } catch (fsErr) {
+        const message =
+          fsErr instanceof Error ? fsErr.message : "File server restore failed";
+        return NextResponse.json({ error: message }, { status: 502 });
+      }
       const { data: restored, error: rErr } = await supabase
         .from("fs_nodes")
         .update({ is_deleted: false, deleted_at: null })
@@ -82,6 +88,15 @@ export async function PATCH(request: Request, context: RouteContext) {
         .select(FS_NODE_COLS)
         .single();
       if (rErr) throw rErr;
+      if (node.node_type === "folder") {
+        const prefix = `${node.relative_path}/`;
+        const { error: cascadeErr } = await supabase
+          .from("fs_nodes")
+          .update({ is_deleted: false, deleted_at: null })
+          .like("relative_path", `${prefix}%`)
+          .eq("is_deleted", true);
+        if (cascadeErr) throw cascadeErr;
+      }
       await logActivity(
         {
           user_id: effectiveUserId,
@@ -252,17 +267,69 @@ export async function DELETE(request: Request, context: RouteContext) {
           { status: 400 },
         );
       }
-      await fsPermanentDelete(node.relative_path);
-      await supabase.from("fs_nodes").delete().eq("id", id);
+      try {
+        await fsPermanentDelete(node.relative_path);
+      } catch (fsErr) {
+        const message =
+          fsErr instanceof Error ? fsErr.message : "File server delete failed";
+        return NextResponse.json({ error: message }, { status: 502 });
+      }
+      if (node.node_type === "folder") {
+        const prefix = `${node.relative_path}/`;
+        const { error: cascadeErr } = await supabase
+          .from("fs_nodes")
+          .delete()
+          .like("relative_path", `${prefix}%`);
+        if (cascadeErr) {
+          return NextResponse.json(
+            { error: cascadeErr.message },
+            { status: 500 },
+          );
+        }
+      }
+      const { error: delErr } = await supabase
+        .from("fs_nodes")
+        .delete()
+        .eq("id", id);
+      if (delErr) {
+        return NextResponse.json({ error: delErr.message }, { status: 500 });
+      }
     } else {
-      await fsTrash(node.relative_path);
-      await supabase
+      try {
+        await fsTrash(node.relative_path);
+      } catch (fsErr) {
+        const message =
+          fsErr instanceof Error ? fsErr.message : "File server trash failed";
+        return NextResponse.json({ error: message }, { status: 502 });
+      }
+      const deletedAt = new Date().toISOString();
+      const { error: softErr } = await supabase
         .from("fs_nodes")
         .update({
           is_deleted: true,
-          deleted_at: new Date().toISOString(),
+          deleted_at: deletedAt,
         })
         .eq("id", id);
+      if (softErr) {
+        return NextResponse.json({ error: softErr.message }, { status: 500 });
+      }
+      if (node.node_type === "folder") {
+        const prefix = `${node.relative_path}/`;
+        const { error: cascadeErr } = await supabase
+          .from("fs_nodes")
+          .update({
+            is_deleted: true,
+            deleted_at: deletedAt,
+          })
+          .like("relative_path", `${prefix}%`)
+          .eq("is_deleted", false);
+        if (cascadeErr) {
+          return NextResponse.json(
+            { error: cascadeErr.message },
+            { status: 500 },
+          );
+        }
+      }
     }
     await logActivity(
       {

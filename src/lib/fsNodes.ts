@@ -189,6 +189,63 @@ export async function listFsChildren(
   return (data ?? []) as FsNode[];
 }
 
+/** Aggregate descendant file sizes onto folder nodes (in-memory after one/few queries). */
+export async function attachFolderSizes(
+  supabase: SupabaseClient,
+  nodes: FsNode[],
+): Promise<FsNode[]> {
+  const folders = nodes.filter((n) => n.node_type === "folder");
+  if (folders.length === 0) return nodes;
+
+  const escapeLike = (p: string) =>
+    p.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+
+  const sizes = new Map<string, number>();
+
+  async function fill(list: FsNode[], deleted: boolean) {
+    if (list.length === 0) return;
+    const chunkSize = 30;
+    for (let i = 0; i < list.length; i += chunkSize) {
+      const chunk = list.slice(i, i + chunkSize);
+      const orFilter = chunk
+        .map((f) => `relative_path.like.${escapeLike(f.relative_path)}/%`)
+        .join(",");
+      const { data, error } = await supabase
+        .from("fs_nodes")
+        .select("relative_path,size_bytes")
+        .eq("node_type", "file")
+        .eq("is_deleted", deleted)
+        .or(orFilter);
+      if (error) throw error;
+      for (const folder of chunk) {
+        const prefix = `${folder.relative_path}/`;
+        let sum = 0;
+        for (const row of data ?? []) {
+          if (String(row.relative_path || "").startsWith(prefix)) {
+            sum += Number(row.size_bytes) || 0;
+          }
+        }
+        sizes.set(folder.id, sum);
+      }
+    }
+  }
+
+  await fill(
+    folders.filter((f) => !f.is_deleted),
+    false,
+  );
+  await fill(
+    folders.filter((f) => f.is_deleted),
+    true,
+  );
+
+  return nodes.map((n) =>
+    n.node_type === "folder"
+      ? { ...n, size_bytes: sizes.get(n.id) ?? 0 }
+      : n,
+  );
+}
+
 export async function getFsNodeByPath(
   supabase: SupabaseClient,
   relativePath: string,

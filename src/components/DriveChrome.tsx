@@ -95,7 +95,9 @@ type DriveChromeContextValue = {
   transferPanelOpen: boolean;
   setTransferPanelOpen: (open: boolean) => void;
   placeNav: PlaceNavState | null;
-  setPlaceNav: (nav: PlaceNavState | null) => void;
+  setPlaceNav: (
+    nav: PlaceNavState | null | ((prev: PlaceNavState | null) => PlaceNavState | null),
+  ) => void;
   /** Explorer chrome shared between shell + workspace */
   explorer: ExplorerSurface;
   setExplorer: (patch: Partial<ExplorerSurface>) => void;
@@ -106,6 +108,9 @@ type DriveChromeContextValue = {
   setViewMode: (mode: ViewMode) => void;
   registerExplorerActions: (actions: ExplorerActions | null) => void;
   explorerActions: ExplorerActions | null;
+  previewNode: FsNode | null;
+  openPreview: (node: FsNode) => void;
+  closePreview: () => void;
 };
 
 const defaultExplorer: ExplorerSurface = {
@@ -139,6 +144,7 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
   const [explorerActions, setExplorerActions] = useState<ExplorerActions | null>(
     null,
   );
+  const [previewNode, setPreviewNode] = useState<FsNode | null>(null);
   const serverStatus = useFileServerHealth();
 
   const queueRef = useRef<QueuedUpload[]>([]);
@@ -205,6 +211,15 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const openPreview = useCallback((node: FsNode) => {
+    if (node.node_type !== "file") return;
+    setPreviewNode(node);
+  }, []);
+
+  const closePreview = useCallback(() => {
+    setPreviewNode(null);
+  }, []);
 
   const openUpload = useCallback((spaceId?: string | null) => {
     if (spaceId) setUploadSpaceId(spaceId);
@@ -385,6 +400,9 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       setViewMode,
       registerExplorerActions,
       explorerActions,
+      previewNode,
+      openPreview,
+      closePreview,
     }),
     [
       uploadRequestId,
@@ -414,6 +432,9 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       setViewMode,
       registerExplorerActions,
       explorerActions,
+      previewNode,
+      openPreview,
+      closePreview,
     ],
   );
 

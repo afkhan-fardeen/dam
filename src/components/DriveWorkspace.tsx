@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { IconDots, IconX } from "@tabler/icons-react";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 import {
   ExplorerContextMenu,
   type ExplorerMenuItem,
@@ -88,7 +90,11 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     viewMode,
     setViewMode,
     registerExplorerActions,
+    openPreview,
   } = useDriveChrome();
+
+  const folderIdRef = useRef(folderId);
+  folderIdRef.current = folderId;
 
   const [nodes, setNodes] = useState<FsNode[]>([]);
   const [ancestors, setAncestors] = useState<FsNode[]>([]);
@@ -168,14 +174,14 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
       } catch (err) {
         setError(err instanceof Error ? err.message : "Load failed");
       } finally {
-        if (!opts?.quiet) setLoading(false);
+        setLoading(false);
       }
     },
     [folderId, inTrash],
   );
 
   useEffect(() => {
-    void load();
+    void load({ quiet: true });
   }, [load]);
 
   const libraryEpochSeen = useRef(libraryEpoch);
@@ -257,7 +263,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
             created_at: n.created_at,
             passcode_enabled: n.passcode_enabled,
           })),
-          currentFolderId: folderId,
+          currentFolderId: folderIdRef.current,
           onNavigateFolder: (id) => {
             const params = new URLSearchParams();
             if (id) params.set("folder", id);
@@ -275,9 +281,14 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     })();
     return () => {
       cancelled = true;
-      setPlaceNav(null);
     };
-  }, [folderId, setPlaceNav, router, libraryEpoch]);
+  }, [setPlaceNav, router, libraryEpoch]); // eslint-disable-line react-hooks/exhaustive-deps -- folderId patched below
+
+  useEffect(() => {
+    setPlaceNav((prev) =>
+      prev ? { ...prev, currentFolderId: folderId } : prev,
+    );
+  }, [folderId, setPlaceNav]);
 
   useEffect(() => {
     if (uploadRequestId === lastUploadReq.current) return;
@@ -358,6 +369,15 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
         e.preventDefault();
         applySelection(orderedIdsRef.current);
+      }
+      if (e.key === "Enter") {
+        const n = selectedRef.current;
+        if (!n) return;
+        if (n.node_type === "folder" && !inTrash) {
+          openFolder(n.id);
+        } else if (n.node_type === "file") {
+          openPreview(n);
+        }
       }
       if (e.key === "Escape") {
         clearSelection();
@@ -538,6 +558,9 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
           status: "error",
           error: err instanceof Error ? err.message : "Delete failed",
         });
+        toast.error(
+          err instanceof Error ? err.message : "Delete failed",
+        );
         void load({ quiet: true });
       }
     }
@@ -663,7 +686,11 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
   const isGrid = viewMode === "grid";
 
   function onItemDoubleClick(node: FsNode) {
-    if (node.node_type === "folder" && !inTrash) openFolder(node.id);
+    if (node.node_type === "folder" && !inTrash) {
+      openFolder(node.id);
+      return;
+    }
+    if (node.node_type === "file") openPreview(node);
   }
 
   function renderIcon(node: FsNode, size = 16) {
@@ -828,6 +855,13 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
         id: "open",
         label: "Open",
         onSelect: () => openFolder(node.id),
+      });
+    }
+    if (node.node_type === "file") {
+      items.push({
+        id: "preview",
+        label: "Preview",
+        onSelect: () => openPreview(node),
       });
     }
     if (node.node_type === "file" && !inTrash) {
@@ -1090,9 +1124,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
                     {fileTypeLabel(node.node_type, node.mime_type, node.name)}
                   </td>
                   <td className="xp-col-size">
-                    {node.node_type === "folder"
-                      ? ""
-                      : formatBytes(node.size_bytes)}
+                    {formatBytes(node.size_bytes)}
                   </td>
                   <td>
                     <button
@@ -1124,80 +1156,76 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
       ) : null}
 
       {newFolderOpen ? (
-        <dialog className="modal modal-open">
-          <div className="modal-box">
-            <h3 className="font-bold">New folder</h3>
+        <Modal
+          title="New folder"
+          onClose={() => setNewFolderOpen(false)}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setNewFolderOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={() => void createFolder()}>
+                Create
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-2">
             <input
-              className="input input-bordered mt-3 w-full"
+              className="xp-search w-full"
+              style={{ width: "100%" }}
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               placeholder="Folder name"
               autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void createFolder();
+              }}
             />
             <input
-              className="input input-bordered mt-2 w-full"
+              className="xp-search w-full"
+              style={{ width: "100%" }}
               value={newFolderTags}
               onChange={(e) => setNewFolderTags(e.target.value)}
               placeholder="Tags (comma-separated)"
             />
             <textarea
-              className="textarea textarea-bordered mt-2 w-full"
+              className="xp-details-textarea"
               rows={3}
               value={newFolderDesc}
               onChange={(e) => setNewFolderDesc(e.target.value)}
               placeholder="Description"
             />
-            <div className="modal-action">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setNewFolderOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-neutral"
-                onClick={() => void createFolder()}
-              >
-                Create
-              </button>
-            </div>
           </div>
-        </dialog>
+        </Modal>
       ) : null}
 
       {renameNode ? (
-        <dialog className="modal modal-open">
-          <div className="modal-box">
-            <h3 className="font-bold">Rename</h3>
-            <input
-              className="input input-bordered mt-3 w-full"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void saveRename();
-              }}
-            />
-            <div className="modal-action">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => setRenameNode(null)}
-              >
+        <Modal
+          title="Rename"
+          onClose={() => setRenameNode(null)}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setRenameNode(null)}>
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-neutral"
-                onClick={() => void saveRename()}
-              >
+              </Button>
+              <Button variant="primary" onClick={() => void saveRename()}>
                 Save
-              </button>
-            </div>
-          </div>
-        </dialog>
+              </Button>
+            </>
+          }
+        >
+          <input
+            className="xp-search w-full"
+            style={{ width: "100%" }}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void saveRename();
+            }}
+          />
+        </Modal>
       ) : null}
 
       {trashTargets ? (

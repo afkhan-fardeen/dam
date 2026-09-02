@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireDrive } from "@/lib/auth";
 import {
   FS_NODE_COLS,
+  attachFolderSizes,
   attachFsFavorites,
   attachFsNodeTags,
 } from "@/lib/fsNodes";
@@ -90,6 +91,13 @@ export async function GET(request: Request) {
   nodes = await attachFsFavorites(supabase, effectiveUserId, nodes);
   if (view === "starred" || view === "favorites") {
     nodes = nodes.map((n) => ({ ...n, favorited: true }));
+  }
+  if (nodes.some((n) => n.node_type === "folder")) {
+    try {
+      nodes = await attachFolderSizes(supabase, nodes);
+    } catch {
+      /* non-fatal */
+    }
   }
 
   return NextResponse.json({ nodes, count: nodes.length, view });

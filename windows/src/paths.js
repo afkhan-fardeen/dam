@@ -84,6 +84,12 @@ export async function sha256File(filePath) {
 
 export async function movePath(src, dest) {
   await ensureDir(path.dirname(dest));
+  if (await pathExists(dest)) {
+    const err = new Error("Destination already exists");
+    err.code = "EEXIST";
+    err.statusCode = 409;
+    throw err;
+  }
   try {
     await fsp.rename(src, dest);
   } catch (err) {
@@ -94,6 +100,22 @@ export async function movePath(src, dest) {
     }
     throw err;
   }
+}
+
+/** Pick a unique absolute path under destDir by appending " (n)" before extension. */
+export async function uniqueDestPath(preferredAbs) {
+  if (!(await pathExists(preferredAbs))) return preferredAbs;
+  const dir = path.dirname(preferredAbs);
+  const base = path.basename(preferredAbs);
+  const ext = path.extname(base);
+  const stem = ext ? base.slice(0, -ext.length) : base;
+  for (let i = 1; i < 10_000; i++) {
+    const candidate = path.join(dir, `${stem} (${i})${ext}`);
+    if (!(await pathExists(candidate))) return candidate;
+  }
+  const err = new Error("Could not allocate unique trash path");
+  err.statusCode = 409;
+  throw err;
 }
 
 export async function copyPath(src, dest) {

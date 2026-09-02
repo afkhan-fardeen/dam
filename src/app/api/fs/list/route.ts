@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireDrive, logActivity } from "@/lib/auth";
 import {
   FS_NODE_COLS,
+  attachFolderSizes,
   attachFsFavorites,
   attachFsNodeTags,
   grantCreatorEdit,
@@ -105,6 +106,9 @@ export async function GET(request: Request) {
   try {
     nodes = await attachFsNodeTags(supabase, nodes);
     nodes = await attachFsFavorites(supabase, effectiveUserId, nodes);
+    if (!foldersOnly) {
+      nodes = await attachFolderSizes(supabase, nodes);
+    }
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Enrichment failed";

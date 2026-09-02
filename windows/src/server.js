@@ -16,6 +16,7 @@ import {
   resolveSafe,
   toRelative,
   movePath,
+  uniqueDestPath,
   copyPath,
   sha256File,
 } from "./paths.js";
@@ -226,18 +227,57 @@ app.post("/fs/copy", async (request, reply) => {
 });
 
 app.post("/fs/trash", async (request, reply) => {
-  const body = request.body || {};
-  const relative = String(body.path || "");
-  if (!relative) return reply.code(400).send({ error: "path required" });
-  const src = resolveSafe(STORAGE_ROOT, relative);
-  if (!(await pathExists(src))) return reply.code(404).send({ error: "Not found" });
-  const dest = resolveSafe(TRASH_ROOT, relative);
-  await movePath(src, dest);
-  await writeTrashSidecar(dest, {
-    original_path: relative.replace(/\\/g, "/"),
-    trashed_at: new Date().toISOString(),
-  });
-  return { ok: true, trash_path: toRelative(TRASH_ROOT, dest) };
+  try {
+    const body = request.body || {};
+    const relative = String(body.path || "");
+    if (!relative) {
+      return reply.code(400).send({ error: "path required", code: "BAD_REQUEST" });
+    }
+    const src = resolveSafe(STORAGE_ROOT, relative);
+    if (!(await pathExists(src))) {
+      return reply.code(404).send({ error: "Not found", code: "NOT_FOUND" });
+    }
+    const dest = resolveSafe(TRASH_ROOT, relative);
+    // Same relative path may already sit in trash (re-delete or leftover). Clear it
+    // so restore/permanent-delete keep using the stable original relative_path.
+    if (await pathExists(dest)) {
+      await fsp.rm(dest, { recursive: true, force: true });
+      await fsp.rm(dest + ".trash.json", { force: true }).catch(() => null);
+    }
+    await movePath(src, dest);
+    await writeTrashSidecar(dest, {
+      original_path: relative.replace(/\\/g, "/"),
+      trashed_at: new Date().toISOString(),
+    });
+    return { ok: true, trash_path: toRelative(TRASH_ROOT, dest) };
+  } catch (err) {
+    // Last-resort unique dest if overwrite race still hits EEXIST
+    if (err?.code === "EEXIST") {
+      try {
+        const body = request.body || {};
+        const relative = String(body.path || "");
+        const src = resolveSafe(STORAGE_ROOT, relative);
+        const preferred = resolveSafe(TRASH_ROOT, relative);
+        const dest = await uniqueDestPath(preferred);
+        await movePath(src, dest);
+        await writeTrashSidecar(dest, {
+          original_path: relative.replace(/\\/g, "/"),
+          trashed_at: new Date().toISOString(),
+        });
+        return { ok: true, trash_path: toRelative(TRASH_ROOT, dest) };
+      } catch (err2) {
+        return reply.code(err2?.statusCode || 500).send({
+          error: err2?.message || "Trash failed",
+          code: err2?.code || "TRASH_FAILED",
+        });
+      }
+    }
+    const status = err?.statusCode || 500;
+    return reply.code(status).send({
+      error: err?.message || "Trash failed",
+      code: err?.code || "TRASH_FAILED",
+    });
+  }
 });
 
 app.post("/fs/restore", async (request, reply) => {

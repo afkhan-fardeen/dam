@@ -22,7 +22,7 @@ export function ExplorerDetails({
   canEditTags = false,
   canEditDescription = false,
 }: Props) {
-  const { notifyLibraryChange, setSelectedNode } = useDriveChrome();
+  const { notifyLibraryChange, setSelectedNode, openPreview } = useDriveChrome();
   const [tags, setTags] = useState<Tag[]>(node.tags ?? []);
   const [draft, setDraft] = useState("");
   const [description, setDescription] = useState(node.description ?? "");
@@ -43,13 +43,7 @@ export function ExplorerDetails({
     node.node_type === "file" && node.has_thumbnail
       ? `/api/fs/media/thumbnail/${node.id}`
       : null;
-  const canPreviewFile =
-    node.node_type === "file" &&
-    Boolean(
-      node.mime_type?.startsWith("image/") ||
-        node.mime_type === "application/pdf" ||
-        thumb,
-    );
+  const canPreviewFile = node.node_type === "file";
 
   async function patchNode(body: Record<string, unknown>) {
     setBusy(true);
@@ -121,12 +115,11 @@ export function ExplorerDetails({
     <aside className="xp-details" aria-label="Details">
       <div className="flex flex-col items-center gap-3 pb-4 border-b border-[var(--win-border)]">
         {node.node_type === "file" ? (
-          <a
+          <button
+            type="button"
             className="xp-tile-icon xp-details-preview"
-            href={`/api/fs/media/file/${node.id}`}
-            target="_blank"
-            rel="noreferrer"
             title={canPreviewFile ? "Open preview" : "Open file"}
+            onClick={() => openPreview(node)}
           >
             {thumb ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -139,7 +132,7 @@ export function ExplorerDetails({
             ) : (
               <div className="xp-file-block" style={{ width: 64, height: 74 }} />
             )}
-          </a>
+          </button>
         ) : (
           <div className="xp-tile-icon xp-details-preview">
             <FolderGlyph size={72} />
@@ -150,6 +143,15 @@ export function ExplorerDetails({
           <div className="text-[11px] text-[var(--ink-soft)] mt-0.5">
             {typeLabel}
           </div>
+          {node.node_type === "file" ? (
+            <button
+              type="button"
+              className="xp-cmd mt-2"
+              onClick={() => openPreview(node)}
+            >
+              Open preview
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -161,7 +163,7 @@ export function ExplorerDetails({
         <div>
           <dt className="text-[var(--ink-soft)]">Size</dt>
           <dd className="mt-0.5">
-            {node.node_type === "folder" ? "—" : formatBytes(node.size_bytes)}
+            {formatBytes(node.size_bytes)}
           </dd>
         </div>
         <div>

@@ -73,12 +73,11 @@ function TreeRow({
       <button
         type="button"
         className={`xp-nav-item fs-tree-row${active ? " is-active" : ""}`}
-        style={{ paddingLeft: 8 + depth * 12 }}
         title={node.name}
         onMouseEnter={() => onPrefetch?.(node.id)}
         onClick={() => onNavigate(node.id)}
       >
-        <span className="fs-tree-guides" aria-hidden>
+        <span className="tree-guides" aria-hidden>
           {Array.from({ length: depth }, (_, i) => {
             const lastCol = i === depth - 1;
             const stem = lastCol ? !isLast : Boolean(ancestorContinues[i]);
@@ -86,9 +85,10 @@ function TreeRow({
               <span
                 key={i}
                 className={[
-                  "fs-tree-guide",
+                  "tree-guide-col",
                   lastCol ? "is-elbow" : "",
                   stem ? "is-stem" : "",
+                  lastCol && isLast ? "is-end" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}

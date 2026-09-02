@@ -20,6 +20,7 @@ import {
   formatModified,
 } from "@/lib/explorerFormat";
 import { readViewMode } from "@/lib/uiPrefs";
+import { useToast } from "@/components/ui/Toast";
 
 type Props = {
   isAdmin: boolean;
@@ -29,6 +30,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = searchParams.get("view") || "all";
+  const toast = useToast();
   const {
     upsertJob,
     removeJob,
@@ -42,6 +44,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
     viewMode,
     setViewMode,
     registerExplorerActions,
+    openPreview,
   } = useDriveChrome();
 
   const [nodes, setNodes] = useState<FsNode[]>([]);
@@ -58,6 +61,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   const selectedRef = useRef<FsNode | null>(null);
   const selectedIdsRef = useRef<string[]>([]);
   const nodesRef = useRef<FsNode[]>([]);
+  const orderedIdsRef = useRef<string[]>([]);
   const anchorIdRef = useRef<string | null>(null);
 
   const inTrash = view === "trash";
@@ -77,7 +81,36 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
 
   useEffect(() => {
     nodesRef.current = nodes;
+    orderedIdsRef.current = nodes.map((n) => n.id);
   }, [nodes]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        applySelection(orderedIdsRef.current);
+      }
+      if (e.key === "Enter") {
+        const n = selectedRef.current;
+        if (!n) return;
+        openNode(n);
+      }
+      if (e.key === "Escape") {
+        clearSelection();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   useEffect(() => {
     const stored = readViewMode();
@@ -98,7 +131,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
         setError(err instanceof Error ? err.message : "Could not load files.");
         setNodes([]);
       } finally {
-        if (!opts?.quiet) setLoading(false);
+        setLoading(false);
       }
     },
     [view],
@@ -167,7 +200,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
 
   function onItemClick(e: React.MouseEvent, node: FsNode) {
     e.stopPropagation();
-    const ordered = nodesRef.current.map((n) => n.id);
+    const ordered = orderedIdsRef.current;
     const meta = e.metaKey || e.ctrlKey;
     if (e.shiftKey && anchorIdRef.current) {
       const a = ordered.indexOf(anchorIdRef.current);
@@ -308,7 +341,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
       }
       notifyLibraryChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Action failed");
+      toast.error(err instanceof Error ? err.message : "Action failed");
       void load({ quiet: true });
     } finally {
       setBusy(false);
@@ -336,6 +369,10 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   function openNode(node: FsNode) {
     if (node.node_type === "folder" && !inTrash) {
       router.push(`/?folder=${encodeURIComponent(node.id)}`);
+      return;
+    }
+    if (node.node_type === "file") {
+      openPreview(node);
       return;
     }
     if (node.parent_id) {
@@ -416,7 +453,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
     const items: ExplorerMenuItem[] = [];
     items.push({
       id: "open",
-      label: "Open",
+      label: node.node_type === "file" ? "Preview" : "Open",
       onSelect: () => openNode(node),
     });
     if (node.node_type === "file" && !inTrash) {
@@ -562,9 +599,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
                   {fileTypeLabel(node.node_type, node.mime_type, node.name)}
                 </td>
                 <td className="xp-col-size">
-                  {node.node_type === "folder"
-                    ? ""
-                    : formatBytes(node.size_bytes)}
+                  {formatBytes(node.size_bytes)}
                 </td>
                 <td>
                   <button

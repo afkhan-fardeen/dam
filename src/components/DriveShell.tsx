@@ -29,6 +29,7 @@ import { UploadProgressPanel } from "@/components/UploadProgressPanel";
 import { CommandBar } from "@/components/CommandBar";
 import { ExplorerNavPane } from "@/components/explorer/ExplorerNavPane";
 import { ExplorerDetails } from "@/components/explorer/ExplorerDetails";
+import { FsPreviewOverlay } from "@/components/explorer/FsPreviewOverlay";
 import { Button } from "@/components/ui/Button";
 import { navigateWithTransition } from "@/components/ui/useViewTransitionNavigate";
 import { useToast } from "@/components/ui/Toast";
@@ -75,6 +76,8 @@ export function DriveShell({
     setViewMode,
     setExplorer,
     setSelectedNode,
+    previewNode,
+    closePreview,
   } = useDriveChrome();
   const toast = useToast();
 
@@ -653,6 +656,10 @@ export function DriveShell({
             closeUpload();
           }}
         />
+      ) : null}
+
+      {previewNode ? (
+        <FsPreviewOverlay node={previewNode} onClose={closePreview} />
       ) : null}
 
     </div>
