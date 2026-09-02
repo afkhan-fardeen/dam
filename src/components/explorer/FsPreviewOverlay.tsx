@@ -34,6 +34,7 @@ function previewKind(node: FsNode): PreviewKind {
 export function FsPreviewOverlay({ node, onClose }: Props) {
   const [mounted, setMounted] = useState(false);
   const [imgReady, setImgReady] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
   const kind = previewKind(node);
   const fileUrl = `/api/fs/media/file/${node.id}`;
   const thumbUrl = node.has_thumbnail
@@ -47,6 +48,7 @@ export function FsPreviewOverlay({ node, onClose }: Props) {
 
   useEffect(() => {
     setImgReady(false);
+    setMediaError(null);
   }, [node.id]);
 
   useEffect(() => {
@@ -121,7 +123,28 @@ export function FsPreviewOverlay({ node, onClose }: Props) {
         </header>
 
         <div className="fs-preview-stage">
-          {kind === "image" ? (
+          {mediaError ? (
+            <div className="fs-preview-fallback">
+              <p className="fs-preview-fallback-title">Preview unavailable</p>
+              <p className="fs-preview-fallback-hint">{mediaError}</p>
+              <p className="fs-preview-fallback-hint">
+                If downloads also fail, check that the Windows file server is
+                online and reachable from Vercel (FILE_API_BASE_URL).
+              </p>
+              <div className="fs-preview-fallback-actions">
+                <a
+                  className="xp-cmd is-active"
+                  href={`${fileUrl}?download=1`}
+                  download={node.name}
+                >
+                  <IconDownload size={16} stroke={1.75} />
+                  Download
+                </a>
+              </div>
+            </div>
+          ) : null}
+
+          {!mediaError && kind === "image" ? (
             <div className="fs-preview-media">
               {thumbUrl && !imgReady ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -137,11 +160,14 @@ export function FsPreviewOverlay({ node, onClose }: Props) {
                 alt={node.name}
                 className={`fs-preview-img${imgReady ? " is-ready" : " is-loading"}`}
                 onLoad={() => setImgReady(true)}
+                onError={() =>
+                  setMediaError("Could not load image from file server")
+                }
               />
             </div>
           ) : null}
 
-          {kind === "video" ? (
+          {!mediaError && kind === "video" ? (
             <video
               key={node.id}
               className="fs-preview-video"
@@ -149,10 +175,13 @@ export function FsPreviewOverlay({ node, onClose }: Props) {
               controls
               preload="metadata"
               playsInline
+              onError={() =>
+                setMediaError("Could not load video from file server")
+              }
             />
           ) : null}
 
-          {kind === "audio" ? (
+          {!mediaError && kind === "audio" ? (
             <div className="fs-preview-audio-wrap">
               <audio
                 key={node.id}
@@ -160,11 +189,14 @@ export function FsPreviewOverlay({ node, onClose }: Props) {
                 src={fileUrl}
                 controls
                 preload="metadata"
+                onError={() =>
+                  setMediaError("Could not load audio from file server")
+                }
               />
             </div>
           ) : null}
 
-          {kind === "pdf" ? (
+          {!mediaError && kind === "pdf" ? (
             <iframe
               key={node.id}
               className="fs-preview-iframe"
@@ -173,7 +205,7 @@ export function FsPreviewOverlay({ node, onClose }: Props) {
             />
           ) : null}
 
-          {kind === "other" ? (
+          {!mediaError && kind === "other" ? (
             <div className="fs-preview-fallback">
               <div className="xp-file-block" style={{ width: 72, height: 84 }} />
               <p className="fs-preview-fallback-title">{node.name}</p>

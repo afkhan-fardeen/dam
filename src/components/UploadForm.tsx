@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { IconFolderPlus, IconX } from "@tabler/icons-react";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { getTagChipStyles } from "@/lib/categories";
@@ -25,6 +25,7 @@ type UploadFormProps = {
   onCancel: () => void;
   onStarted?: () => void;
   initialFile?: File | null;
+  initialFiles?: File[];
 };
 
 type QueuedFile = {
@@ -39,7 +40,13 @@ function formatBytes(n: number): string {
 }
 
 function fileKey(file: File, index: number): string {
-  return `${file.name}:${file.size}:${file.lastModified}:${index}`;
+  return `${file.webkitRelativePath || file.name}:${file.size}:${file.lastModified}:${index}`;
+}
+
+function parentDir(relativePath: string): string {
+  const norm = relativePath.replace(/\\/g, "/");
+  const i = norm.lastIndexOf("/");
+  return i > 0 ? norm.slice(0, i) : "";
 }
 
 export function UploadForm({
@@ -50,8 +57,14 @@ export function UploadForm({
   onCancel,
   onStarted,
   initialFile = null,
+  initialFiles = [],
 }: UploadFormProps) {
-  const { enqueueUploads, serverOnline } = useDriveChrome();
+  const {
+    enqueueUploads,
+    serverOnline,
+    pendingUploadFiles,
+    clearPendingUploadFiles,
+  } = useDriveChrome();
   const [destFolderId, setDestFolderId] = useState<string | null>(initialFolderId);
   const [folders, setFolders] = useState<FsNode[]>([]);
 
@@ -59,11 +72,21 @@ export function UploadForm({
     setDestFolderId(initialFolderId);
   }, [initialFolderId]);
 
+  const seedFiles = useMemo(() => {
+    const list: File[] = [];
+    if (initialFile) list.push(initialFile);
+    for (const f of initialFiles) list.push(f);
+    for (const f of pendingUploadFiles) list.push(f);
+    return list;
+  }, [initialFile, initialFiles, pendingUploadFiles]);
+
   const [queue, setQueue] = useState<QueuedFile[]>(() =>
-    initialFile
-      ? [{ key: fileKey(initialFile, 0), file: initialFile }]
-      : [],
+    seedFiles.map((file, i) => ({ key: fileKey(file, i), file })),
   );
+  const [displayName, setDisplayName] = useState(
+    () => (seedFiles.length === 1 ? seedFiles[0]!.name : ""),
+  );
+  const [folderDisplayName, setFolderDisplayName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
   const [description, setDescription] = useState("");
@@ -72,6 +95,19 @@ export function UploadForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const folderInputId = useId();
+  const seededRef = useRef(false);
+
+  useEffect(() => {
+    if (seededRef.current || seedFiles.length === 0) return;
+    seededRef.current = true;
+    setQueue(seedFiles.map((file, i) => ({ key: fileKey(file, i), file })));
+    if (seedFiles.length === 1) setDisplayName(seedFiles[0]!.name);
+    const root = seedFiles
+      .map((f) => (f.webkitRelativePath || "").split("/")[0])
+      .find(Boolean);
+    if (root) setFolderDisplayName(root);
+    clearPendingUploadFiles();
+  }, [seedFiles, clearPendingUploadFiles]);
 
   const destFolderName =
     destFolderId == null
@@ -79,6 +115,11 @@ export function UploadForm({
       : folders.find((f) => f.id === destFolderId)?.name ||
         initialFolderName ||
         "Folder";
+
+  const isFolderUpload = queue.some((q) =>
+    Boolean(q.file.webkitRelativePath && q.file.webkitRelativePath.includes("/")),
+  );
+  const singleFile = !isFolderUpload && queue.length === 1;
 
   useEffect(() => {
     const el = folderInputRef.current;
@@ -117,6 +158,13 @@ export function UploadForm({
       });
       return next;
     });
+    if (incoming.length === 1 && !incoming[0]!.webkitRelativePath) {
+      setDisplayName(incoming[0]!.name);
+    }
+    const root = incoming
+      .map((f) => (f.webkitRelativePath || "").split("/")[0])
+      .find(Boolean);
+    if (root) setFolderDisplayName((prev) => prev || root);
   }
 
   function removeQueued(key: string) {
@@ -143,7 +191,28 @@ export function UploadForm({
     return next;
   }
 
-  function handleSubmit(event: React.FormEvent) {
+  async function ensureFolderPath(
+    parentId: string | null,
+    path: string,
+    meta?: { name?: string; tags?: string[]; description?: string | null },
+  ): Promise<string> {
+    const res = await fetch("/api/fs/ensure-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        parent_id: parentId,
+        path,
+        name: meta?.name,
+        tags: meta?.tags ?? [],
+        description: meta?.description ?? null,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Could not create folders");
+    return json.folder_id as string;
+  }
+
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!serverOnline) {
       setError("File server is offline — uploads are paused.");
@@ -162,21 +231,97 @@ export function UploadForm({
       : "Main Drive";
 
     setBusy(true);
-    enqueueUploads(
-      queue.map((item) => ({
-        file: item.file,
-        folderId: destFolderId,
-        tags: tagList,
-        description: description || null,
-        createdBy: defaultCreatedBy || null,
-        viewHref,
-        viewLabel,
-      })),
-    );
+    setError(null);
 
-    onStarted?.();
-    onUploaded?.(undefined);
-    onCancel();
+    try {
+      if (isFolderUpload) {
+        const rootFromFiles =
+          queue
+            .map((q) => (q.file.webkitRelativePath || "").split("/")[0])
+            .find(Boolean) || "Upload";
+        const rootName = folderDisplayName.trim() || rootFromFiles;
+
+        const dirSet = new Set<string>();
+        for (const item of queue) {
+          const rel = item.file.webkitRelativePath || item.file.name;
+          const parts = rel.replace(/\\/g, "/").split("/").filter(Boolean);
+          if (parts.length === 0) continue;
+          parts[0] = rootName;
+          for (let i = 1; i < parts.length; i++) {
+            dirSet.add(parts.slice(0, i).join("/"));
+          }
+        }
+
+        const dirs = [...dirSet].sort(
+          (a, b) => a.split("/").length - b.split("/").length,
+        );
+        const folderIds = new Map<string, string>();
+
+        for (const dir of dirs) {
+          const isRoot = !dir.includes("/");
+          const id = await ensureFolderPath(
+            destFolderId,
+            dir,
+            isRoot
+              ? {
+                  name: rootName,
+                  tags: tagList,
+                  description: description || null,
+                }
+              : undefined,
+          );
+          folderIds.set(dir, id);
+        }
+
+        enqueueUploads(
+          queue.map((item) => {
+            const rel = (item.file.webkitRelativePath || item.file.name).replace(
+              /\\/g,
+              "/",
+            );
+            const parts = rel.split("/").filter(Boolean);
+            if (parts.length > 0) parts[0] = rootName;
+            const parentPath = parts.slice(0, -1).join("/");
+            const parentId = parentPath
+              ? folderIds.get(parentPath) ?? destFolderId
+              : destFolderId;
+            return {
+              file: item.file,
+              folderId: parentId,
+              displayName: parts[parts.length - 1] || item.file.name,
+              tags: [],
+              description: null,
+              createdBy: defaultCreatedBy || null,
+              viewHref,
+              viewLabel,
+            };
+          }),
+        );
+      } else {
+        enqueueUploads(
+          queue.map((item, index) => ({
+            file: item.file,
+            folderId: destFolderId,
+            displayName:
+              singleFile && displayName.trim()
+                ? displayName.trim()
+                : item.file.name,
+            tags: tagList,
+            description: description || null,
+            createdBy: defaultCreatedBy || null,
+            viewHref,
+            viewLabel,
+          })),
+        );
+      }
+
+      onStarted?.();
+      onUploaded?.(undefined);
+      onCancel();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+      setBusy(false);
+    }
   }
 
   return (
@@ -215,7 +360,8 @@ export function UploadForm({
           <div className="flex flex-col gap-1.5 mb-3">
             <span className="flat-modal-label">Upload to</span>
             <select
-              className="select select-bordered w-full"
+              className="xp-search w-full"
+              style={{ width: "100%", height: 36 }}
               value={destFolderId ?? ""}
               disabled={busy}
               onChange={(e) =>
@@ -229,14 +375,6 @@ export function UploadForm({
                 </option>
               ))}
             </select>
-            <p className="type-caption text-[var(--ink-soft)]">
-              Uploading to:{" "}
-              <strong>
-                {destFolderId
-                  ? `Main Drive / ${destFolderName}`
-                  : "Main Drive"}
-              </strong>
-            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -309,98 +447,119 @@ export function UploadForm({
               </ul>
             ) : (
               <span className="type-caption text-[var(--ink-faint)]">
-                Select files or a folder.
+                Select files or a folder (nested folders are preserved).
               </span>
             )}
           </div>
 
+          {singleFile ? (
+            <div className="flex flex-col gap-1.5 mt-3">
+              <span className="flat-modal-label">File name</span>
+              <input
+                className="xp-search w-full"
+                style={{ width: "100%" }}
+                value={displayName}
+                disabled={busy}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+            </div>
+          ) : null}
+
+          {isFolderUpload ? (
+            <div className="flex flex-col gap-1.5 mt-3">
+              <span className="flat-modal-label">Folder name</span>
+              <input
+                className="xp-search w-full"
+                style={{ width: "100%" }}
+                value={folderDisplayName}
+                disabled={busy}
+                placeholder="Top-level folder name"
+                onChange={(e) => setFolderDisplayName(e.target.value)}
+              />
+              <p className="type-caption text-[var(--ink-soft)]">
+                Nested folders stay intact. Tags and description apply to this
+                top folder only.
+              </p>
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-1.5 mt-3">
             <span className="flat-modal-label">Tags</span>
             {tags.length > 0 ? (
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1.5">
                 {tags.map((t) => {
                   const chip = getTagChipStyles(t);
                   return (
-                    <button
+                    <span
                       key={t}
-                      type="button"
-                      onClick={() =>
-                        setTags((prev) => prev.filter((x) => x !== t))
-                      }
-                      className="tag-chip gap-1"
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] border border-[var(--win-border)]"
                       style={chip.style}
-                      disabled={busy}
                     >
                       {t}
-                      <IconX size={10} />
-                    </button>
+                      <button
+                        type="button"
+                        className="opacity-60 hover:opacity-100"
+                        disabled={busy}
+                        aria-label={`Remove ${t}`}
+                        onClick={() =>
+                          setTags((prev) => prev.filter((x) => x !== t))
+                        }
+                      >
+                        ×
+                      </button>
+                    </span>
                   );
                 })}
               </div>
             ) : null}
-            <div className="flex gap-1.5">
-              <input
-                value={tagDraft}
-                onChange={(e) => setTagDraft(e.target.value)}
-                onBlur={() => {
-                  if (tagDraft.trim()) commitDraftTag();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === ",") {
-                    e.preventDefault();
-                    commitDraftTag();
-                  }
-                }}
-                placeholder="Optional — Enter to add"
-                className="flat-input flex-1"
-                disabled={busy}
-              />
-              <Button
-                variant="secondary"
-                disabled={busy || !tagDraft.trim()}
-                onClick={() => commitDraftTag()}
-              >
-                Add
-              </Button>
-            </div>
+            <input
+              className="xp-search w-full"
+              style={{ width: "100%" }}
+              value={tagDraft}
+              disabled={busy}
+              placeholder="Optional — Enter to add"
+              onChange={(e) => setTagDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitDraftTag();
+                }
+              }}
+            />
           </div>
 
-          <label className="flat-modal-field mt-3">
+          <div className="flex flex-col gap-1.5 mt-3">
             <span className="flat-modal-label">Description</span>
-            <input
+            <textarea
+              className="xp-details-textarea"
+              rows={3}
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="flat-input"
               disabled={busy}
-              placeholder="Optional"
+              placeholder={
+                isFolderUpload
+                  ? "Applies to the top folder"
+                  : "Optional description"
+              }
+              onChange={(e) => setDescription(e.target.value)}
             />
-          </label>
+          </div>
 
-          {error ? <p className="flat-modal-error">{error}</p> : null}
+          {error ? (
+            <p className="mt-3 text-[12px] text-[var(--danger)]">{error}</p>
+          ) : null}
         </div>
 
         <footer className="flat-modal-footer">
           <Button variant="secondary" disabled={busy} onClick={onCancel}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            disabled={busy || !serverOnline || queue.length === 0}
-          >
-            {busy
-              ? "Starting…"
-              : queue.length > 1
-                ? `Upload ${queue.length} files`
-                : "Upload"}
+          <Button variant="primary" disabled={busy || queue.length === 0} type="submit">
+            {busy ? "Starting…" : `Upload${queue.length ? ` (${queue.length})` : ""}`}
           </Button>
         </footer>
-      </form>
-      <form method="dialog" className="modal-backdrop bg-transparent">
-        <button type="button" disabled={busy} onClick={onCancel}>
-          close
-        </button>
       </form>
     </dialog>
   );
 }
+
+void parentDir;

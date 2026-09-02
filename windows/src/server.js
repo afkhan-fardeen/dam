@@ -152,21 +152,32 @@ app.get("/fs/list", async (request, reply) => {
 });
 
 app.post("/fs/mkdir", async (request, reply) => {
-  const body = request.body || {};
-  const relative = String(body.path || "");
-  if (!relative) return reply.code(400).send({ error: "path required" });
-  const abs = resolveSafe(STORAGE_ROOT, relative);
-  if (await pathExists(abs)) {
-    return reply.code(409).send({ error: "Already exists" });
+  try {
+    const body = request.body || {};
+    const relative = String(body.path || "");
+    if (!relative) return reply.code(400).send({ error: "path required" });
+    const abs = resolveSafe(STORAGE_ROOT, relative);
+    const existed = await pathExists(abs);
+    if (!existed) {
+      await ensureDir(abs);
+      sync.enqueue({
+        type: "addDir",
+        relative_path: toRelative(STORAGE_ROOT, abs),
+        node_type: "folder",
+        name: path.basename(abs),
+      });
+    }
+    return {
+      ok: true,
+      relative_path: toRelative(STORAGE_ROOT, abs),
+      existed,
+    };
+  } catch (err) {
+    return reply.code(err?.statusCode || 500).send({
+      error: err?.message || "Mkdir failed",
+      code: err?.code || "MKDIR_FAILED",
+    });
   }
-  await ensureDir(abs);
-  sync.enqueue({
-    type: "addDir",
-    relative_path: toRelative(STORAGE_ROOT, abs),
-    node_type: "folder",
-    name: path.basename(abs),
-  });
-  return { ok: true, relative_path: toRelative(STORAGE_ROOT, abs) };
 });
 
 app.post("/fs/rename", async (request, reply) => {

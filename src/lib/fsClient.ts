@@ -43,7 +43,7 @@ export async function fsMkdir(relativePath: string) {
   const res = await fsFetch("POST", "/fs/mkdir", { json: { path: relativePath } });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || "Mkdir failed");
-  return json as { ok: true; relative_path: string };
+  return json as { ok: true; relative_path: string; existed?: boolean };
 }
 
 export async function fsRename(from: string, toName: string) {

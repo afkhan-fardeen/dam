@@ -3,6 +3,7 @@
 export type FsUploadOptions = {
   file: File;
   parentId: string | null;
+  displayName?: string;
   tags?: string[];
   description?: string | null;
   createdBy?: string | null;
@@ -12,12 +13,14 @@ export type FsUploadOptions = {
 export async function uploadFsFileWithProgress(
   options: FsUploadOptions,
 ): Promise<{ id: string; relative_path: string }> {
+  const name =
+    (options.displayName || options.file.name).trim() || options.file.name;
   const initRes = await fetch("/api/fs/upload", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       parent_id: options.parentId,
-      name: options.file.name,
+      name,
       size: options.file.size,
       mime_type: options.file.type || "application/octet-stream",
     }),
@@ -65,7 +68,7 @@ export async function uploadFsFileWithProgress(
     body: JSON.stringify({
       parent_id: options.parentId,
       session_id: sessionId,
-      name: options.file.name,
+      name,
       mime_type: options.file.type || "application/octet-stream",
       tags: options.tags ?? [],
       description: options.description ?? null,

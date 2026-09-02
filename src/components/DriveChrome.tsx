@@ -34,6 +34,8 @@ export type UploadJob = TransferJob;
 export type UploadEnqueueItem = {
   file: File;
   folderId: string | null;
+  /** Override stored filename (defaults to file.name). */
+  displayName?: string;
   tags?: string[];
   description?: string | null;
   brand?: string | null;
@@ -81,8 +83,10 @@ type DriveChromeContextValue = {
   requestNewFolder: () => void;
   uploadOpen: boolean;
   uploadSpaceId: string | null;
-  openUpload: (spaceId?: string | null) => void;
+  openUpload: (spaceId?: string | null, files?: File[]) => void;
   closeUpload: () => void;
+  pendingUploadFiles: File[];
+  clearPendingUploadFiles: () => void;
   serverStatus: ServerStatus;
   serverOnline: boolean;
   jobs: TransferJob[];
@@ -134,6 +138,7 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
   const [folderRequestId, setFolderRequestId] = useState(0);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadSpaceId, setUploadSpaceId] = useState<string | null>(null);
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([]);
   const [jobs, setJobs] = useState<TransferJob[]>([]);
   const [placeNav, setPlaceNav] = useState<PlaceNavState | null>(null);
   const [transferPanelOpen, setTransferPanelOpen] = useState(false);
@@ -221,18 +226,24 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
     setPreviewNode(null);
   }, []);
 
-  const openUpload = useCallback((spaceId?: string | null) => {
+  const openUpload = useCallback((spaceId?: string | null, files?: File[]) => {
     if (spaceId) setUploadSpaceId(spaceId);
+    if (files?.length) setPendingUploadFiles(Array.from(files));
     setUploadOpen(true);
   }, []);
 
   const closeUpload = useCallback(() => {
     setUploadOpen(false);
     setUploadSpaceId(null);
+    setPendingUploadFiles([]);
+  }, []);
+
+  const clearPendingUploadFiles = useCallback(() => {
+    setPendingUploadFiles([]);
   }, []);
 
   const requestUpload = useCallback(() => {
-    setUploadRequestId((n) => n + 1);
+    setUploadOpen(true);
   }, []);
 
   const requestNewFolder = useCallback(() => {
@@ -275,6 +286,7 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
         jobId,
         file,
         folderId,
+        displayName,
         tags,
         description,
         createdBy,
@@ -282,10 +294,11 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
         viewHref,
         viewLabel,
       } = item;
+      const jobName = displayName?.trim() || file.name;
 
       upsertJob({
         id: jobId,
-        name: file.name,
+        name: jobName,
         progress: 0,
         kind: "upload",
         status: "uploading",
@@ -297,13 +310,14 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
         await uploadFsFileWithProgress({
           file,
           parentId: folderId,
+          displayName: jobName,
           tags,
           description,
           createdBy,
           onProgress: (pct) =>
             upsertJob({
               id: jobId,
-              name: file.name,
+              name: jobName,
               progress: pct,
               kind: "upload",
               status: pct >= 100 ? "saving" : "uploading",
@@ -316,7 +330,7 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
 
         upsertJob({
           id: jobId,
-          name: file.name,
+          name: jobName,
           progress: 100,
           kind: "upload",
           status: "done",
@@ -327,7 +341,7 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         upsertJob({
           id: jobId,
-          name: file.name,
+          name: jobName,
           progress: 0,
           kind: "upload",
           status: "error",
@@ -353,7 +367,7 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
         ...prev,
         ...queued.map((q) => ({
           id: q.jobId,
-          name: q.file.name,
+          name: q.displayName?.trim() || q.file.name,
           progress: 0,
           kind: "upload" as const,
           status: "queued" as const,
@@ -378,6 +392,8 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       uploadSpaceId,
       openUpload,
       closeUpload,
+      pendingUploadFiles,
+      clearPendingUploadFiles,
       serverStatus,
       serverOnline: serverStatus === "connected",
       jobs,
@@ -413,6 +429,8 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       uploadSpaceId,
       openUpload,
       closeUpload,
+      pendingUploadFiles,
+      clearPendingUploadFiles,
       serverStatus,
       jobs,
       upsertJob,

@@ -12,7 +12,6 @@ import {
   type ExplorerMenuItem,
 } from "@/components/explorer/ExplorerContextMenu";
 import { FolderGlyph } from "@/components/explorer/FolderGlyph";
-import { uploadFsFileWithProgress } from "@/lib/fsUpload";
 import type { FsNode } from "@/lib/types";
 import {
   fileTypeLabel,
@@ -91,6 +90,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     setViewMode,
     registerExplorerActions,
     openPreview,
+    openUpload,
   } = useDriveChrome();
 
   const folderIdRef = useRef(folderId);
@@ -294,8 +294,8 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     if (uploadRequestId === lastUploadReq.current) return;
     lastUploadReq.current = uploadRequestId;
     if (!editable || inTrash) return;
-    fileInputRef.current?.click();
-  }, [uploadRequestId, editable, inTrash]);
+    openUpload(null);
+  }, [uploadRequestId, editable, inTrash, openUpload]);
 
   useEffect(() => {
     if (folderRequestId === lastFolderReq.current) return;
@@ -446,50 +446,9 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
 
   async function runUpload(files: FileList | File[]) {
     if (!editable || !serverOnline) return;
-    for (const file of Array.from(files)) {
-      const jobId = `up-${Date.now()}-${file.name}`;
-      upsertJob({
-        id: jobId,
-        name: file.name,
-        progress: 0,
-        kind: "upload",
-        status: "uploading",
-      });
-      try {
-        await uploadFsFileWithProgress({
-          file,
-          parentId: folderId,
-          createdBy: profileName,
-          onProgress: (pct) =>
-            upsertJob({
-              id: jobId,
-              name: file.name,
-              progress: pct,
-              kind: "upload",
-              status: pct >= 100 ? "saving" : "uploading",
-            }),
-        });
-        upsertJob({
-          id: jobId,
-          name: file.name,
-          progress: 100,
-          kind: "upload",
-          status: "done",
-        });
-        window.setTimeout(() => removeJob(jobId), 1800);
-      } catch (err) {
-        upsertJob({
-          id: jobId,
-          name: file.name,
-          progress: 0,
-          kind: "upload",
-          status: "error",
-          error: err instanceof Error ? err.message : "Upload failed",
-        });
-      }
-    }
-    notifyLibraryChange();
-    void load({ quiet: true });
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    openUpload(null, list);
   }
 
   async function saveRename() {
@@ -822,7 +781,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
           id: "upload",
           label: "Upload",
           disabled: !editable || inTrash || !serverOnline,
-          onSelect: () => fileInputRef.current?.click(),
+          onSelect: () => openUpload(null),
         },
         {
           id: "select-all",

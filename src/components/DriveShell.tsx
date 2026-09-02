@@ -67,7 +67,6 @@ export function DriveShell({
     uploadOpen,
     uploadSpaceId,
     requestNewFolder,
-    requestUpload,
     serverOnline,
     serverStatus,
     explorer,
@@ -308,11 +307,7 @@ export function DriveShell({
       else toast.info("Upload not available here");
       return;
     }
-    if (shellUploadSpaceId) {
-      openUpload(shellUploadSpaceId);
-    } else {
-      requestUpload();
-    }
+    openUpload(shellUploadSpaceId || null);
   }
 
   function startResize(
@@ -642,9 +637,9 @@ export function DriveShell({
         onUpload={onUploadClick}
       />
 
-      {uploadOpen && shellUploadSpaceId ? (
+      {uploadOpen ? (
         <UploadForm
-          spaceId={shellUploadSpaceId}
+          spaceId={shellUploadSpaceId || "main"}
           spaceName={uploadSpaceName}
           spaceSlug={uploadSpace?.slug || ""}
           folderId={uploadFolderId}
