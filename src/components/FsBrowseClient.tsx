@@ -36,6 +36,8 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
     notifyLibraryChange,
     setExplorer,
     setSelectedNode,
+    setSelection,
+    clearSelection,
     explorer,
     viewMode,
     setViewMode,
@@ -45,7 +47,8 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   const [nodes, setNodes] = useState<FsNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [trashTarget, setTrashTarget] = useState<FsNode | null>(null);
+  const [trashTargets, setTrashTargets] = useState<FsNode[] | null>(null);
+  const [emptyTrashOpen, setEmptyTrashOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{
     x: number;
     y: number;
@@ -53,6 +56,9 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const selectedRef = useRef<FsNode | null>(null);
+  const selectedIdsRef = useRef<string[]>([]);
+  const nodesRef = useRef<FsNode[]>([]);
+  const anchorIdRef = useRef<string | null>(null);
 
   const inTrash = view === "trash";
   const title =
@@ -66,7 +72,12 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
 
   useEffect(() => {
     selectedRef.current = explorer.selected;
-  }, [explorer.selected]);
+    selectedIdsRef.current = explorer.selectedIds ?? [];
+  }, [explorer.selected, explorer.selectedIds]);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   useEffect(() => {
     const stored = readViewMode();
@@ -105,35 +116,34 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   }, [libraryEpoch, load]);
 
   useEffect(() => {
+    const n = explorer.selectedIds?.length || 0;
     setExplorer({
       title,
       crumbs: [{ id: null, label: title }],
       itemCount: nodes.length,
       canCreate: false,
       canUpload: false,
-      canDelete: Boolean(explorer.selected),
+      canDelete: n > 0,
       canRename: false,
       searchScopeLabel: title,
       parentFolderId: null,
     });
-  }, [
-    title,
-    nodes.length,
-    setExplorer,
-    explorer.selected,
-    inTrash,
-  ]);
+  }, [title, nodes.length, setExplorer, explorer.selectedIds, inTrash]);
 
   useEffect(() => {
-    setSelectedNode(null);
-  }, [view, setSelectedNode]);
+    clearSelection();
+  }, [view, clearSelection]);
 
   useEffect(() => {
     registerExplorerActions({
       deleteSelection: () => {
-        const n = selectedRef.current;
-        if (!n) return;
-        setTrashTarget(n);
+        const ids = selectedIdsRef.current;
+        const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
+        const list = ids
+          .map((id) => byId.get(id))
+          .filter(Boolean) as FsNode[];
+        if (list.length === 0) return;
+        setTrashTargets(list);
       },
       renameSelection: () => {
         /* browse views: rename not available */
@@ -142,12 +152,46 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
     return () => registerExplorerActions(null);
   }, [registerExplorerActions]);
 
+  function applySelection(ids: string[], primaryId?: string) {
+    const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
+    const selectedNodes = ids
+      .map((id) => byId.get(id))
+      .filter(Boolean) as FsNode[];
+    const primary =
+      (primaryId ? byId.get(primaryId) : null) ??
+      selectedNodes[selectedNodes.length - 1] ??
+      null;
+    setSelection(selectedNodes, primary);
+    setExplorer({ canDelete: selectedNodes.length > 0, canRename: false });
+  }
+
+  function onItemClick(e: React.MouseEvent, node: FsNode) {
+    e.stopPropagation();
+    const ordered = nodesRef.current.map((n) => n.id);
+    const meta = e.metaKey || e.ctrlKey;
+    if (e.shiftKey && anchorIdRef.current) {
+      const a = ordered.indexOf(anchorIdRef.current);
+      const b = ordered.indexOf(node.id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        applySelection(ordered.slice(lo, hi + 1), node.id);
+        return;
+      }
+    }
+    if (meta) {
+      const cur = new Set(selectedIdsRef.current);
+      if (cur.has(node.id)) cur.delete(node.id);
+      else cur.add(node.id);
+      anchorIdRef.current = node.id;
+      applySelection([...cur], node.id);
+      return;
+    }
+    anchorIdRef.current = node.id;
+    applySelection([node.id], node.id);
+  }
+
   function selectNode(node: FsNode) {
-    setExplorer({
-      selected: node,
-      canDelete: true,
-      canRename: false,
-    });
+    applySelection([node.id], node.id);
   }
 
   async function toggleFavorite(node: FsNode) {
@@ -243,25 +287,47 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   }
 
   async function confirmTrash() {
-    if (!trashTarget) return;
+    if (!trashTargets?.length) return;
     setBusy(true);
     const permanent = inTrash;
+    const targets = trashTargets;
+    const ids = new Set(targets.map((t) => t.id));
+    setTrashTargets(null);
+    setNodes((prev) => prev.filter((n) => !ids.has(n.id)));
+    clearSelection();
     try {
-      const res = await fetch(
-        `/api/fs/nodes/${trashTarget.id}${permanent ? "?permanent=1" : ""}`,
-        { method: "DELETE" },
-      );
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Delete failed");
+      for (const target of targets) {
+        const res = await fetch(
+          `/api/fs/nodes/${target.id}${permanent ? "?permanent=1" : ""}`,
+          { method: "DELETE" },
+        );
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error || "Delete failed");
+        }
       }
-      setTrashTarget(null);
-      setSelectedNode(null);
-      await load({ quiet: true });
       notifyLibraryChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Action failed");
-      setTrashTarget(null);
+      void load({ quiet: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function emptyTrash() {
+    setEmptyTrashOpen(false);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/fs/trash/empty", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Empty trash failed");
+      setNodes([]);
+      clearSelection();
+      notifyLibraryChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Empty trash failed");
+      void load({ quiet: true });
     } finally {
       setBusy(false);
     }
@@ -279,7 +345,7 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
     }
   }
 
-  const selectedId = explorer.selected?.id ?? null;
+  const selectedIds = new Set(explorer.selectedIds ?? []);
   const isGrid = viewMode === "grid";
 
   function renderIcon(node: FsNode, size = 16) {
@@ -306,14 +372,14 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   function openItemMenu(e: React.MouseEvent, node: FsNode) {
     e.preventDefault();
     e.stopPropagation();
-    selectNode(node);
+    if (!selectedIds.has(node.id)) selectNode(node);
     setCtxMenu({ x: e.clientX, y: e.clientY, node });
   }
 
   function openEmptyMenu(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setSelectedNode(null);
+    clearSelection();
     setCtxMenu({ x: e.clientX, y: e.clientY, node: null });
   }
 
@@ -321,13 +387,31 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
     if (!ctxMenu) return [];
     const node = ctxMenu.node;
     if (!node) {
-      return [
+      const items: ExplorerMenuItem[] = [
+        {
+          id: "select-all",
+          label: "Select all",
+          onSelect: () => applySelection(nodesRef.current.map((n) => n.id)),
+        },
         {
           id: "refresh",
           label: "Refresh",
-          onSelect: () => void load(),
+          onSelect: () => void load({ quiet: true }),
         },
       ];
+      if (inTrash) {
+        items.push(
+          { id: "sep-e", label: "", separator: true },
+          {
+            id: "empty",
+            label: "Empty Recycle Bin",
+            danger: true,
+            disabled: nodes.length === 0,
+            onSelect: () => setEmptyTrashOpen(true),
+          },
+        );
+      }
+      return items;
     }
     const items: ExplorerMenuItem[] = [];
     items.push({
@@ -362,7 +446,15 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
       id: "delete",
       label: inTrash ? "Delete permanently" : "Move to Recycle Bin",
       danger: true,
-      onSelect: () => setTrashTarget(node),
+      onSelect: () => {
+        const ids = selectedIds.has(node.id)
+          ? [...selectedIds]
+          : [node.id];
+        const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
+        setTrashTargets(
+          ids.map((id) => byId.get(id)).filter(Boolean) as FsNode[],
+        );
+      },
     });
     return items;
   }
@@ -370,9 +462,30 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
   return (
     <div
       className="h-full min-h-0 flex flex-col"
-      onClick={() => setSelectedNode(null)}
+      onClick={() => clearSelection()}
       onContextMenu={openEmptyMenu}
     >
+      {inTrash && nodes.length > 0 ? (
+        <div className="xp-toolbar-row">
+          <button
+            type="button"
+            className="xp-cmd"
+            onClick={() =>
+              applySelection(nodesRef.current.map((n) => n.id))
+            }
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            className="xp-cmd"
+            onClick={() => setEmptyTrashOpen(true)}
+          >
+            Empty Trash
+          </button>
+        </div>
+      ) : null}
+
       {error ? (
         <div className="mx-3 mt-2 flex items-center gap-2 rounded border border-[var(--danger)] bg-[#fff5f4] px-3 py-2 text-[12px]">
           <span className="flex-1">{error}</span>
@@ -398,15 +511,14 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
             <button
               key={node.id}
               type="button"
-              className={`xp-tile${selectedId === node.id ? " is-selected" : ""}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                selectNode(node);
-              }}
+              className={`xp-tile${selectedIds.has(node.id) ? " is-selected" : ""}`}
+              onClick={(e) => onItemClick(e, node)}
               onDoubleClick={() => openNode(node)}
               onContextMenu={(e) => openItemMenu(e, node)}
             >
-              <div className="xp-tile-icon">{renderIcon(node, 40)}</div>
+              <div className="xp-tile-icon xp-tile-icon-lg">
+                {renderIcon(node, 72)}
+              </div>
               <div className="xp-tile-name">{node.name}</div>
             </button>
           ))}
@@ -432,11 +544,8 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
             {nodes.map((node) => (
               <tr
                 key={node.id}
-                className={`xp-row${selectedId === node.id ? " is-selected" : ""}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  selectNode(node);
-                }}
+                className={`xp-row${selectedIds.has(node.id) ? " is-selected" : ""}`}
+                onClick={(e) => onItemClick(e, node)}
                 onDoubleClick={() => openNode(node)}
                 onContextMenu={(e) => openItemMenu(e, node)}
               >
@@ -485,19 +594,33 @@ export function FsBrowseClient({ isAdmin: _isAdmin }: Props) {
         />
       ) : null}
 
-      {trashTarget ? (
+      {trashTargets ? (
         <ConfirmModal
           title={inTrash ? "Delete permanently?" : "Move to Recycle Bin?"}
           message={
             inTrash
-              ? `Permanently delete “${trashTarget.name}”.`
-              : `Move “${trashTarget.name}” to Recycle Bin.`
+              ? `Permanently delete ${trashTargets.length} item${
+                  trashTargets.length === 1 ? "" : "s"
+                }.`
+              : `Move ${trashTargets.length} item${
+                  trashTargets.length === 1 ? "" : "s"
+                } to Recycle Bin.`
           }
           confirmLabel={inTrash ? "Delete permanently" : "Move to trash"}
           danger
-          busy={busy}
-          onClose={() => setTrashTarget(null)}
+          onClose={() => setTrashTargets(null)}
           onConfirm={() => void confirmTrash()}
+        />
+      ) : null}
+
+      {emptyTrashOpen ? (
+        <ConfirmModal
+          title="Empty Recycle Bin?"
+          message="Permanently delete everything in Recycle Bin. This cannot be undone."
+          confirmLabel="Empty Trash"
+          danger
+          onClose={() => setEmptyTrashOpen(false)}
+          onConfirm={() => void emptyTrash()}
         />
       ) : null}
     </div>

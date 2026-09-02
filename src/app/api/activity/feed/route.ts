@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
-import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { requireDrive } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -24,7 +23,8 @@ function shortSummary(row: ActivityRow): string {
   const fileName =
     detailStr(details, "original_name") ||
     detailStr(details, "name") ||
-    "a file";
+    detailStr(details, "relative_path") ||
+    "an item";
   switch (row.action) {
     case "login":
       return "Signed in";
@@ -33,7 +33,12 @@ function shortSummary(row: ActivityRow): string {
     case "download":
       return `Downloaded ${fileName}`;
     case "delete":
+    case "trash":
       return `Trashed ${fileName}`;
+    case "permanent_delete":
+      return `Permanently deleted ${fileName}`;
+    case "empty_trash":
+      return "Emptied Recycle Bin";
     case "restore":
       return `Restored ${fileName}`;
     case "favorite":
@@ -42,45 +47,40 @@ function shortSummary(row: ActivityRow): string {
       return `Unfavorited ${fileName}`;
     case "create_folder":
       return `Created folder ${detailStr(details, "name") || "folder"}`;
+    case "error":
+      return detailStr(details, "message") || "Error";
     default:
       return row.action.replace(/_/g, " ");
   }
 }
 
-/** Recent activity for the signed-in user (and their spaces). */
+function isErrorAction(action: string): boolean {
+  return (
+    action === "error" ||
+    action.endsWith("_error") ||
+    action.includes("fail")
+  );
+}
+
+/** Recent portal activity (open drive — no login required). */
 export async function GET(request: Request) {
-  const { user, effectiveUserId, profile, supabase } =
-    await requireUser(request);
-  if (!user || !effectiveUserId || !profile) {
-    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  const { profile, effectiveUserId, supabase } = await requireDrive(request);
+  if (!profile || !effectiveUserId) {
+    return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
 
-  const { data: memberships } = await supabase
-    .from("space_memberships")
-    .select("space_id")
-    .eq("user_id", effectiveUserId);
+  const url = new URL(request.url);
+  const limit = Math.min(
+    40,
+    Math.max(1, Number(url.searchParams.get("limit") || 20) || 20),
+  );
 
-  const spaceIds = (memberships ?? []).map((m) => m.space_id as string);
-  const admin = getSupabaseAdmin();
-  const limit = 8;
-
-  let query = admin
+  const { data, error } = await supabase
     .from("activity_log")
     .select("id,user_id,space_id,action,details,created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (!profile.is_admin) {
-    if (spaceIds.length > 0) {
-      query = query.or(
-        `user_id.eq.${effectiveUserId},space_id.in.(${spaceIds.join(",")})`,
-      );
-    } else {
-      query = query.eq("user_id", effectiveUserId);
-    }
-  }
-
-  const { data, error } = await query;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -91,6 +91,7 @@ export async function GET(request: Request) {
     summary: shortSummary(row),
     created_at: row.created_at,
     space_id: row.space_id,
+    is_error: isErrorAction(row.action),
   }));
 
   return NextResponse.json({ entries });

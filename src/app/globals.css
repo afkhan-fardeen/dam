@@ -4297,6 +4297,27 @@ select:focus-visible {
   letter-spacing: -0.01em;
 }
 
+.xp-server-pill {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--win-border);
+  background: var(--win-bg);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.xp-server-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .xp-cmdbar {
   display: flex;
   align-items: center;
@@ -4307,6 +4328,10 @@ select:focus-visible {
   border-bottom: 1px solid var(--win-border);
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+.xp-cmdbar-right {
+  justify-content: flex-end;
 }
 
 .xp-cmdbar::-webkit-scrollbar {
@@ -4337,6 +4362,11 @@ select:focus-visible {
 .xp-cmd:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.xp-cmd.is-active {
+  background: var(--win-selected);
+  border-color: var(--win-selected-border);
 }
 
 .xp-cmd-sep {
@@ -4450,7 +4480,7 @@ select:focus-visible {
   flex-direction: column;
   background: var(--win-surface);
   border-right: 1px solid var(--win-border);
-  overflow: auto;
+  overflow: hidden;
 }
 
 .xp-nav-section {
@@ -4512,8 +4542,10 @@ select:focus-visible {
 }
 
 .xp-details {
-  width: 260px;
+  width: 280px;
   flex-shrink: 0;
+  align-self: stretch;
+  height: 100%;
   border-left: 1px solid var(--win-border);
   background: var(--win-surface);
   overflow: auto;

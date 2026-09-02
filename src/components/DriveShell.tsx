@@ -260,9 +260,11 @@ export function DriveShell({
         ? "Search"
         : "Main Drive";
 
-  const statusText = explorer.selected
-    ? `1 item selected`
-    : `${explorer.itemCount} item${explorer.itemCount === 1 ? "" : "s"}`;
+  const selectedCount = explorer.selectedIds?.length || (explorer.selected ? 1 : 0);
+  const statusText =
+    selectedCount > 0
+      ? `${selectedCount} item${selectedCount === 1 ? "" : "s"} selected`
+      : `${explorer.itemCount} item${explorer.itemCount === 1 ? "" : "s"}`;
 
   const canNew = showExplorerChrome && explorer.canCreate && view !== "trash";
   const canUp =
@@ -270,12 +272,25 @@ export function DriveShell({
     explorer.canUpload &&
     online &&
     view !== "trash";
-  const canDel = showExplorerChrome && explorer.canDelete && explorer.selected;
+  const canDel = showExplorerChrome && explorer.canDelete && selectedCount > 0;
   const canRen =
     showExplorerChrome &&
     explorer.canRename &&
-    explorer.selected &&
+    selectedCount === 1 &&
     view !== "trash";
+
+  const serverLabel =
+    serverStatus === "connected"
+      ? "Server online"
+      : serverStatus === "checking"
+        ? "Checking server…"
+        : "Server offline";
+  const serverColor =
+    serverStatus === "connected"
+      ? "var(--ok)"
+      : serverStatus === "checking"
+        ? "var(--ink-faint)"
+        : "var(--danger)";
 
   function onUploadClick() {
     if (!canUp) {
@@ -323,11 +338,19 @@ export function DriveShell({
           >
             Back to files
           </Link>
+        ) : showExplorerChrome ? (
+          <div className="xp-server-pill" title={serverLabel}>
+            <span
+              className="xp-server-dot"
+              style={{ background: serverColor }}
+            />
+            <span>{serverLabel}</span>
+          </div>
         ) : null}
       </div>
 
       {showExplorerChrome ? (
-        <div className="xp-cmdbar">
+        <div className="xp-cmdbar xp-cmdbar-right">
           <button
             type="button"
             className="xp-cmd"
@@ -453,7 +476,6 @@ export function DriveShell({
             open={sidebarOpen}
             onClose={() => setSidebarOpen(false)}
             profile={profile}
-            serverStatus={serverStatus}
             showTrash={showTrash}
             mode={onAdmin ? "admin" : "employee"}
           />
@@ -498,7 +520,8 @@ export function DriveShell({
           ) : null}
         </div>
 
-        {showExplorerChrome && explorer.selected ? (
+        {showExplorerChrome &&
+        (selectedCount > 1 || explorer.selected) ? (
           <>
             <button
               type="button"
@@ -519,10 +542,23 @@ export function DriveShell({
               >
                 <IconX size={16} />
               </button>
-              <ExplorerDetails
-                node={explorer.selected}
-                canEditTags={view !== "trash"}
-              />
+              {selectedCount > 1 ? (
+                <aside className="xp-details" aria-label="Details">
+                  <div className="text-[13px] font-semibold">
+                    {selectedCount} items selected
+                  </div>
+                  <p className="mt-2 text-[12px] text-[var(--ink-soft)]">
+                    Use Delete to remove them, or click a single item for
+                    details.
+                  </p>
+                </aside>
+              ) : explorer.selected ? (
+                <ExplorerDetails
+                  node={explorer.selected}
+                  canEditTags={view !== "trash"}
+                  canEditDescription={view !== "trash"}
+                />
+              ) : null}
             </div>
           </>
         ) : null}

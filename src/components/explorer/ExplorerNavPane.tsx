@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  IconAlertTriangle,
   IconClock,
   IconHome,
   IconSettings,
+  IconStar,
   IconTrash,
-  IconUser,
 } from "@tabler/icons-react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useDriveChrome } from "@/components/DriveChrome";
 import { FolderGlyph } from "@/components/explorer/FolderGlyph";
+import { FsFolderTree } from "@/components/explorer/FsFolderTree";
 import { useViewTransitionNavigate } from "@/components/ui/useViewTransitionNavigate";
-import type { ServerStatus } from "@/lib/useFileServerHealth";
 import type { FsNode, Profile } from "@/lib/types";
 
 const ADMIN_LINKS = [
@@ -22,39 +23,34 @@ const ADMIN_LINKS = [
   { id: "activity", label: "Activity", href: "/admin/activity" },
 ] as const;
 
+type ActivityEntry = {
+  id: string;
+  action: string;
+  summary: string;
+  created_at: string | null;
+  is_error?: boolean;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
   profile: Profile;
-  serverStatus: ServerStatus;
   showTrash: boolean;
   mode?: "employee" | "admin";
 };
-
-function serverDot(status: ServerStatus): { color: string; title: string } {
-  switch (status) {
-    case "connected":
-      return { color: "var(--ok)", title: "File server online" };
-    case "checking":
-      return { color: "var(--ink-faint)", title: "Checking file server…" };
-    default:
-      return { color: "var(--danger)", title: "File server offline" };
-  }
-}
 
 export function ExplorerNavPane({
   open,
   onClose,
   profile,
-  serverStatus,
   showTrash,
   mode = "employee",
 }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const navigate = useViewTransitionNavigate();
-  const { libraryEpoch } = useDriveChrome();
-  const server = serverDot(serverStatus);
+  const { libraryEpoch, placeNav } = useDriveChrome();
+  void profile;
 
   const view = searchParams.get("view") || "files";
   const folderParam = searchParams.get("folder");
@@ -62,6 +58,7 @@ export function ExplorerNavPane({
   const onAdmin = pathname.startsWith("/admin");
 
   const [quickFolders, setQuickFolders] = useState<FsNode[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,14 +78,25 @@ export function ExplorerNavPane({
     };
   }, [libraryEpoch]);
 
-  const initials = useMemo(() => {
-    const name = profile.full_name || profile.email || "?";
-    return name
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() || "")
-      .join("");
-  }, [profile.full_name, profile.email]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadActivity() {
+      try {
+        const res = await fetch("/api/activity/feed?limit=16");
+        const json = await res.json();
+        if (!res.ok || cancelled) return;
+        setActivity((json.entries as ActivityEntry[]) ?? []);
+      } catch {
+        if (!cancelled) setActivity([]);
+      }
+    }
+    void loadActivity();
+    const id = window.setInterval(() => void loadActivity(), 12_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [libraryEpoch]);
 
   function go(href: string) {
     navigate(href);
@@ -138,29 +146,7 @@ export function ExplorerNavPane({
             </button>
           </div>
         ) : (
-          <>
-            {quickFolders.length > 0 ? (
-              <div className="xp-nav-section">
-                <div className="xp-nav-label">Quick access</div>
-                {quickFolders.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    className={`xp-nav-item${
-                      folderParam === f.id ? " is-active" : ""
-                    }`}
-                    title={f.relative_path || f.name}
-                    onClick={() =>
-                      go(`/?folder=${encodeURIComponent(f.id)}`)
-                    }
-                  >
-                    <FolderGlyph size={14} />
-                    <span className="truncate">{f.name}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
+          <div className="xp-nav-scroll">
             <div className="xp-nav-section">
               <button
                 type="button"
@@ -170,6 +156,21 @@ export function ExplorerNavPane({
                 <FolderGlyph size={14} />
                 Main Drive
               </button>
+              {placeNav && placeNav.folders.length > 0 ? (
+                <FsFolderTree
+                  folders={placeNav.folders}
+                  currentFolderId={placeNav.currentFolderId}
+                  onNavigate={(id) => {
+                    placeNav.onNavigateFolder(id);
+                    onClose();
+                  }}
+                  onPrefetch={placeNav.onPrefetchFolder}
+                />
+              ) : null}
+            </div>
+
+            <div className="xp-nav-section">
+              <div className="xp-nav-label">Quick access</div>
               <button
                 type="button"
                 className={`xp-nav-item${
@@ -180,42 +181,74 @@ export function ExplorerNavPane({
                 <IconClock size={14} stroke={1.75} />
                 Recent
               </button>
-              {showTrash ? (
+              <button
+                type="button"
+                className={`xp-nav-item${
+                  onHome && (view === "favorites" || view === "starred")
+                    ? " is-active"
+                    : ""
+                }`}
+                onClick={() => go("/?view=favorites")}
+              >
+                <IconStar size={14} stroke={1.75} />
+                Favorites
+              </button>
+              {quickFolders.map((f) => (
                 <button
+                  key={f.id}
                   type="button"
                   className={`xp-nav-item${
-                    onHome && view === "trash" ? " is-active" : ""
+                    folderParam === f.id ? " is-active" : ""
                   }`}
-                  onClick={() => go("/?view=trash")}
+                  title={f.relative_path || f.name}
+                  onClick={() => go(`/?folder=${encodeURIComponent(f.id)}`)}
                 >
-                  <IconTrash size={14} stroke={1.75} />
-                  Recycle Bin
+                  <FolderGlyph size={14} />
+                  <span className="truncate">{f.name}</span>
                 </button>
-              ) : null}
+              ))}
             </div>
-          </>
+
+            <div className="xp-nav-section xp-nav-activity">
+              <div className="xp-nav-label">Logs &amp; Activities</div>
+              {activity.length === 0 ? (
+                <p className="xp-nav-activity-empty">No recent activity</p>
+              ) : (
+                <ul className="xp-nav-activity-list">
+                  {activity.map((e) => (
+                    <li
+                      key={e.id}
+                      className={`xp-nav-activity-item${
+                        e.is_error ? " is-error" : ""
+                      }`}
+                      title={e.summary}
+                    >
+                      {e.is_error ? (
+                        <IconAlertTriangle size={12} stroke={1.75} />
+                      ) : null}
+                      <span className="truncate">{e.summary}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
         )}
 
-        <div className="xp-nav-footer">
-          <div className="flex items-center gap-2 px-1 mb-2">
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ background: server.color }}
-              title={server.title}
-            />
-            <span className="text-[11px] text-[var(--ink-soft)] truncate">
-              {server.title}
-            </span>
+        {showTrash && mode !== "admin" && !onAdmin ? (
+          <div className="xp-nav-footer xp-nav-trash-pin">
+            <button
+              type="button"
+              className={`xp-nav-item${
+                onHome && view === "trash" ? " is-active" : ""
+              }`}
+              onClick={() => go("/?view=trash")}
+            >
+              <IconTrash size={14} stroke={1.75} />
+              Recycle Bin
+            </button>
           </div>
-          <div className="xp-nav-item" aria-label="Portal user">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--win-bg)] border border-[var(--win-border)] text-[10px] font-semibold">
-              {initials || <IconUser size={12} />}
-            </span>
-            <span className="truncate">
-              {profile.full_name?.trim() || profile.email || "Main Drive"}
-            </span>
-          </div>
-        </div>
+        ) : null}
       </nav>
     </>
   );

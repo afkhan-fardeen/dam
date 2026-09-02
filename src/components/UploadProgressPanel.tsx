@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IconChevronDown, IconChevronUp, IconX } from "@tabler/icons-react";
 import Link from "next/link";
 import { useDriveChrome, type TransferJob } from "@/components/DriveChrome";
+import {
+  readTransferPanelPos,
+  writeTransferPanelPos,
+} from "@/lib/uiPrefs";
 
 function statusLabel(job: TransferJob): string {
   switch (job.status) {
@@ -38,6 +42,19 @@ export function UploadProgressPanel() {
     transferPanelOpen,
     setTransferPanelOpen,
   } = useDriveChrome();
+
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const dragRef = useRef<{
+    ox: number;
+    oy: number;
+    left: number;
+    top: number;
+  } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setPos(readTransferPanelPos());
+  }, []);
 
   const active = jobs.filter(
     (j) =>
@@ -91,7 +108,6 @@ export function UploadProgressPanel() {
     };
   }, [jobs]);
 
-  // Auto-expand only when work starts (0 → N). Respect minimize while busy.
   const prevActiveCount = useRef(0);
   const userMinimized = useRef(false);
   useEffect(() => {
@@ -106,6 +122,53 @@ export function UploadProgressPanel() {
   function minimizePanel() {
     userMinimized.current = true;
     setTransferPanelOpen(false);
+  }
+
+  function clampPos(left: number, top: number) {
+    const w = panelRef.current?.offsetWidth ?? 320;
+    const h = panelRef.current?.offsetHeight ?? 120;
+    const maxL = Math.max(8, window.innerWidth - w - 8);
+    const maxT = Math.max(8, window.innerHeight - h - 8);
+    return {
+      left: Math.min(Math.max(8, left), maxL),
+      top: Math.min(Math.max(8, top), maxT),
+    };
+  }
+
+  function onDragStart(e: React.PointerEvent) {
+    if ((e.target as HTMLElement).closest("button,a,input")) return;
+    const el = panelRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const current = pos ?? { left: rect.left, top: rect.top };
+    dragRef.current = {
+      ox: e.clientX,
+      oy: e.clientY,
+      left: current.left,
+      top: current.top,
+    };
+    el.setPointerCapture(e.pointerId);
+  }
+
+  function onDragMove(e: React.PointerEvent) {
+    if (!dragRef.current) return;
+    const d = dragRef.current;
+    const next = clampPos(
+      d.left + (e.clientX - d.ox),
+      d.top + (e.clientY - d.oy),
+    );
+    setPos(next);
+  }
+
+  function onDragEnd(e: React.PointerEvent) {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    try {
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (pos) writeTransferPanelPos(pos);
   }
 
   if (jobs.length === 0) return null;
@@ -158,9 +221,20 @@ export function UploadProgressPanel() {
     (j) => j.kind === "trash" || j.kind === "delete",
   );
 
+  const style: React.CSSProperties = pos
+    ? { left: pos.left, top: pos.top, right: "auto", bottom: "auto" }
+    : {};
+
   if (!transferPanelOpen) {
     return (
-      <div className="transfer-toast transfer-toast--min">
+      <div
+        ref={panelRef}
+        className="transfer-toast transfer-toast--min"
+        style={style}
+        onPointerDown={onDragStart}
+        onPointerMove={onDragMove}
+        onPointerUp={onDragEnd}
+      >
         <button
           type="button"
           onClick={() => {
@@ -187,9 +261,20 @@ export function UploadProgressPanel() {
   }
 
   return (
-    <div className="transfer-toast" role="status" aria-live="polite">
+    <div
+      ref={panelRef}
+      className="transfer-toast"
+      role="status"
+      aria-live="polite"
+      style={style}
+    >
       <div className="transfer-panel">
-        <div className="transfer-panel-head">
+        <div
+          className="transfer-panel-head transfer-drag-handle"
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+        >
           <div className="transfer-panel-heading min-w-0">
             <p className="transfer-panel-title">Activity</p>
             <p

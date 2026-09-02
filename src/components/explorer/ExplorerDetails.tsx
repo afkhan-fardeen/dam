@@ -14,26 +14,70 @@ import { useDriveChrome } from "@/components/DriveChrome";
 type Props = {
   node: FsNode;
   canEditTags?: boolean;
+  canEditDescription?: boolean;
 };
 
-export function ExplorerDetails({ node, canEditTags = false }: Props) {
+export function ExplorerDetails({
+  node,
+  canEditTags = false,
+  canEditDescription = false,
+}: Props) {
   const { notifyLibraryChange, setSelectedNode } = useDriveChrome();
   const [tags, setTags] = useState<Tag[]>(node.tags ?? []);
   const [draft, setDraft] = useState("");
+  const [description, setDescription] = useState(node.description ?? "");
+  const [descDirty, setDescDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setTags(node.tags ?? []);
     setDraft("");
+    setDescription(node.description ?? "");
+    setDescDirty(false);
     setError(null);
-  }, [node.id, node.tags]);
+  }, [node.id, node.tags, node.description]);
 
   const typeLabel = fileTypeLabel(node.node_type, node.mime_type, node.name);
   const thumb =
     node.node_type === "file" && node.has_thumbnail
       ? `/api/fs/media/thumbnail/${node.id}`
       : null;
+  const canPreviewFile =
+    node.node_type === "file" &&
+    Boolean(
+      node.mime_type?.startsWith("image/") ||
+        node.mime_type === "application/pdf" ||
+        thumb,
+    );
+
+  async function patchNode(body: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/fs/nodes/${node.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not update");
+      const updated = json.node as FsNode | undefined;
+      if (updated) {
+        setSelectedNode({ ...node, ...updated });
+        if (updated.tags) setTags(updated.tags);
+        if (typeof updated.description === "string" || updated.description === null) {
+          setDescription(updated.description ?? "");
+          setDescDirty(false);
+        }
+      }
+      notifyLibraryChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function saveTags(nextNames: string[]) {
     setBusy(true);
@@ -76,20 +120,31 @@ export function ExplorerDetails({ node, canEditTags = false }: Props) {
   return (
     <aside className="xp-details" aria-label="Details">
       <div className="flex flex-col items-center gap-3 pb-4 border-b border-[var(--win-border)]">
-        <div className="xp-tile-icon" style={{ width: 72, height: 72 }}>
-          {thumb ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={thumb}
-              alt=""
-              className="h-full w-full object-cover rounded"
-            />
-          ) : node.node_type === "folder" ? (
-            <FolderGlyph size={56} />
-          ) : (
-            <div className="xp-file-block" />
-          )}
-        </div>
+        {node.node_type === "file" ? (
+          <a
+            className="xp-tile-icon xp-details-preview"
+            href={`/api/fs/media/file/${node.id}`}
+            target="_blank"
+            rel="noreferrer"
+            title={canPreviewFile ? "Open preview" : "Open file"}
+          >
+            {thumb ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={thumb}
+                alt=""
+                className="h-full w-full object-cover rounded"
+                loading="lazy"
+              />
+            ) : (
+              <div className="xp-file-block" style={{ width: 64, height: 74 }} />
+            )}
+          </a>
+        ) : (
+          <div className="xp-tile-icon xp-details-preview">
+            <FolderGlyph size={72} />
+          </div>
+        )}
         <div className="text-center px-1">
           <div className="text-[13px] font-semibold break-all">{node.name}</div>
           <div className="text-[11px] text-[var(--ink-soft)] mt-0.5">
@@ -121,13 +176,44 @@ export function ExplorerDetails({ node, canEditTags = false }: Props) {
             {node.relative_path || "—"}
           </dd>
         </div>
-        <div>
-          <dt className="text-[var(--ink-soft)]">Uploaded by</dt>
-          <dd className="mt-0.5">
-            {node.uploaded_by || node.created_by || "—"}
-          </dd>
-        </div>
       </dl>
+
+      <div className="mt-5">
+        <div className="text-[12px] text-[var(--ink-soft)] mb-2">Description</div>
+        {canEditDescription ? (
+          <>
+            <textarea
+              className="xp-details-textarea"
+              rows={3}
+              value={description}
+              disabled={busy}
+              placeholder="Add a description…"
+              onChange={(e) => {
+                setDescription(e.target.value);
+                setDescDirty(true);
+              }}
+            />
+            {descDirty ? (
+              <button
+                type="button"
+                className="xp-cmd mt-2"
+                disabled={busy}
+                onClick={() =>
+                  void patchNode({ description: description.trim() || null })
+                }
+              >
+                Save description
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <p className="text-[12px] text-[var(--ink)] whitespace-pre-wrap">
+            {description.trim() || (
+              <span className="text-[var(--ink-faint)]">No description</span>
+            )}
+          </p>
+        )}
+      </div>
 
       <div className="mt-5">
         <div className="text-[12px] text-[var(--ink-soft)] mb-2">Tags</div>

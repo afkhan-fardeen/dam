@@ -56,6 +56,8 @@ export type ExplorerSurface = {
   title: string;
   crumbs: ExplorerCrumb[];
   selected: FsNode | null;
+  /** Multi-select ids (includes selected when set). */
+  selectedIds: string[];
   itemCount: number;
   canCreate: boolean;
   canUpload: boolean;
@@ -98,6 +100,8 @@ type DriveChromeContextValue = {
   explorer: ExplorerSurface;
   setExplorer: (patch: Partial<ExplorerSurface>) => void;
   setSelectedNode: (node: FsNode | null) => void;
+  setSelection: (nodes: FsNode[], primary?: FsNode | null) => void;
+  clearSelection: () => void;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
   registerExplorerActions: (actions: ExplorerActions | null) => void;
@@ -108,6 +112,7 @@ const defaultExplorer: ExplorerSurface = {
   title: "Main Drive",
   crumbs: [{ id: null, label: "Main Drive" }],
   selected: null,
+  selectedIds: [],
   itemCount: 0,
   canCreate: false,
   canUpload: false,
@@ -144,15 +149,48 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setExplorer = useCallback((patch: Partial<ExplorerSurface>) => {
-    setExplorerState((prev) => ({ ...prev, ...patch }));
+    setExplorerState((prev) => {
+      const next = { ...prev, ...patch };
+      if ("selected" in patch && !("selectedIds" in patch)) {
+        next.selectedIds = patch.selected ? [patch.selected.id] : [];
+      }
+      return next;
+    });
   }, []);
 
   const setSelectedNode = useCallback((node: FsNode | null) => {
     setExplorerState((prev) => ({
       ...prev,
       selected: node,
+      selectedIds: node ? [node.id] : [],
       canDelete: node ? prev.canDelete : false,
       canRename: node ? prev.canRename : false,
+    }));
+  }, []);
+
+  const setSelection = useCallback(
+    (nodes: FsNode[], primary?: FsNode | null) => {
+      const ids = nodes.map((n) => n.id);
+      const primaryNode =
+        primary ??
+        (nodes.length === 1 ? nodes[0]! : nodes.find((n) => n.id === ids[ids.length - 1]) ?? null);
+      setExplorerState((prev) => ({
+        ...prev,
+        selected: primaryNode,
+        selectedIds: ids,
+        canDelete: ids.length > 0 ? prev.canDelete || true : false,
+        canRename: ids.length === 1 ? prev.canRename || true : false,
+      }));
+    },
+    [],
+  );
+
+  const clearSelection = useCallback(() => {
+    setExplorerState((prev) => ({
+      ...prev,
+      selected: null,
+      selectedIds: [],
+      canRename: false,
     }));
   }, []);
 
@@ -341,6 +379,8 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       explorer,
       setExplorer,
       setSelectedNode,
+      setSelection,
+      clearSelection,
       viewMode,
       setViewMode,
       registerExplorerActions,
@@ -368,6 +408,8 @@ export function DriveChromeProvider({ children }: { children: ReactNode }) {
       explorer,
       setExplorer,
       setSelectedNode,
+      setSelection,
+      clearSelection,
       viewMode,
       setViewMode,
       registerExplorerActions,

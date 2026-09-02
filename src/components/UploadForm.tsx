@@ -52,8 +52,12 @@ export function UploadForm({
   initialFile = null,
 }: UploadFormProps) {
   const { enqueueUploads, serverOnline } = useDriveChrome();
-  const [destFolderId] = useState<string | null>(initialFolderId);
+  const [destFolderId, setDestFolderId] = useState<string | null>(initialFolderId);
   const [folders, setFolders] = useState<FsNode[]>([]);
+
+  useEffect(() => {
+    setDestFolderId(initialFolderId);
+  }, [initialFolderId]);
 
   const [queue, setQueue] = useState<QueuedFile[]>(() =>
     initialFile
@@ -208,6 +212,33 @@ export function UploadForm({
         </header>
 
         <div className="flat-modal-body flex-1 overflow-y-auto">
+          <div className="flex flex-col gap-1.5 mb-3">
+            <span className="flat-modal-label">Upload to</span>
+            <select
+              className="select select-bordered w-full"
+              value={destFolderId ?? ""}
+              disabled={busy}
+              onChange={(e) =>
+                setDestFolderId(e.target.value ? e.target.value : null)
+              }
+            >
+              <option value="">Main Drive (root)</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.relative_path || f.name}
+                </option>
+              ))}
+            </select>
+            <p className="type-caption text-[var(--ink-soft)]">
+              Uploading to:{" "}
+              <strong>
+                {destFolderId
+                  ? `Main Drive / ${destFolderName}`
+                  : "Main Drive"}
+              </strong>
+            </p>
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <span className="flat-modal-label">Files</span>
             <div className="flex flex-wrap gap-2">

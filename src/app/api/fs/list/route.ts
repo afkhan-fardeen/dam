@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireDrive } from "@/lib/auth";
+import { requireDrive, logActivity } from "@/lib/auth";
 import {
   FS_NODE_COLS,
   attachFsFavorites,
@@ -8,15 +8,37 @@ import {
   joinRelative,
   listFsChildren,
   resolveParentFolder,
+  setFsNodeTags,
 } from "@/lib/fsNodes";
 import { fsMkdir } from "@/lib/fsClient";
 import type { FsNode } from "@/lib/types";
 
 export const runtime = "nodejs";
 
+async function loadAncestorChain(
+  supabase: Awaited<ReturnType<typeof requireDrive>>["supabase"],
+  folderId: string,
+): Promise<FsNode[]> {
+  const chain: FsNode[] = [];
+  let cur: string | null = folderId;
+  const seen = new Set<string>();
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const { data, error } = await supabase
+      .from("fs_nodes")
+      .select(FS_NODE_COLS)
+      .eq("id", cur)
+      .maybeSingle();
+    if (error || !data) break;
+    const node = data as FsNode;
+    chain.unshift(node);
+    cur = node.parent_id;
+  }
+  return chain;
+}
+
 export async function GET(request: Request) {
-  const { user, profile, effectiveUserId, supabase } =
-    await requireDrive(request);
+  const { profile, effectiveUserId, supabase } = await requireDrive(request);
   if (!profile || !effectiveUserId) {
     return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
@@ -27,6 +49,8 @@ export async function GET(request: Request) {
   const foldersOnly = url.searchParams.get("folders") === "1";
 
   let nodes: FsNode[];
+  let ancestors: FsNode[] = [];
+
   if (trash) {
     const { data, error } = await supabase
       .from("fs_nodes")
@@ -51,7 +75,9 @@ export async function GET(request: Request) {
   } else {
     try {
       const parentId =
-        parentIdParam && parentIdParam !== "null" && parentIdParam !== "undefined"
+        parentIdParam &&
+        parentIdParam !== "null" &&
+        parentIdParam !== "undefined"
           ? parentIdParam
           : null;
       if (
@@ -66,9 +92,11 @@ export async function GET(request: Request) {
         );
       }
       nodes = await listFsChildren(supabase, { parentId });
+      if (parentId) {
+        ancestors = await loadAncestorChain(supabase, parentId);
+      }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "List failed";
+      const message = err instanceof Error ? err.message : "List failed";
       console.error("[fs/list]", message);
       return NextResponse.json({ error: message }, { status: 400 });
     }
@@ -84,12 +112,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  return NextResponse.json({ nodes });
+  return NextResponse.json({ nodes, ancestors });
 }
 
 export async function POST(request: Request) {
-  const { user, profile, effectiveUserId, supabase } =
-    await requireDrive(request);
+  const { profile, effectiveUserId, supabase } = await requireDrive(request);
   if (!profile || !effectiveUserId) {
     return NextResponse.json({ error: "Portal not configured" }, { status: 503 });
   }
@@ -97,6 +124,8 @@ export async function POST(request: Request) {
   const body = (await request.json()) as {
     parent_id?: string | null;
     name?: string;
+    description?: string | null;
+    tags?: string[];
   };
   const name = body.name?.trim();
   if (!name) {
@@ -117,10 +146,6 @@ export async function POST(request: Request) {
     );
   }
 
-  if (parentId) {
-    // Open drive: any signed-in user may create in any folder
-  }
-
   const relativePath = parentPath ? joinRelative(parentPath, name) : name;
   try {
     await fsMkdir(relativePath);
@@ -131,6 +156,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const description =
+    typeof body.description === "string" ? body.description.trim() || null : null;
+
   const { data: node, error } = await supabase
     .from("fs_nodes")
     .insert({
@@ -138,6 +166,7 @@ export async function POST(request: Request) {
       node_type: "folder",
       name,
       relative_path: relativePath,
+      description,
       uploaded_by: effectiveUserId,
       is_deleted: false,
     })
@@ -150,17 +179,39 @@ export async function POST(request: Request) {
 
   try {
     await grantCreatorEdit(supabase, node.id, effectiveUserId);
+    if (Array.isArray(body.tags) && body.tags.length > 0) {
+      await setFsNodeTags(supabase, node.id, body.tags, true);
+    }
   } catch (err) {
     return NextResponse.json(
       {
         error:
           err instanceof Error
             ? err.message
-            : "Folder created but permission grant failed",
+            : "Folder created but metadata failed",
       },
       { status: 500 },
     );
   }
 
-  return NextResponse.json({ node }, { status: 201 });
+  let result = node as FsNode;
+  try {
+    const enriched = await attachFsNodeTags(supabase, [result]);
+    result = enriched[0] ?? result;
+  } catch {
+    /* ignore */
+  }
+
+  await logActivity(
+    {
+      user_id: effectiveUserId,
+      action: "create_folder",
+      target_type: "fs_node",
+      target_id: result.id,
+      details: { name: result.name, relative_path: result.relative_path },
+    },
+    supabase,
+  );
+
+  return NextResponse.json({ node: result }, { status: 201 });
 }
