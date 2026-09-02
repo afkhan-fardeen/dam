@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { getUserSpaces } from "@/lib/auth";
 import { DriveChromeProvider } from "@/components/DriveChrome";
 import { DriveShell } from "@/components/DriveShell";
+import { ToastProvider } from "@/components/ui/Toast";
 
 export default async function AppLayout({
   children,
@@ -20,16 +21,18 @@ export default async function AppLayout({
 
   return (
     <DriveChromeProvider>
-      <Suspense fallback={<div className="min-h-screen" />}>
-        <DriveShell
-          spaces={spaces}
-          memberships={memberships}
-          profile={profile}
-          viewingAs={viewingAs}
-        >
-          {children}
-        </DriveShell>
-      </Suspense>
+      <ToastProvider>
+        <Suspense fallback={<div className="min-h-screen" />}>
+          <DriveShell
+            spaces={spaces}
+            memberships={memberships}
+            profile={profile}
+            viewingAs={viewingAs}
+          >
+            {children}
+          </DriveShell>
+        </Suspense>
+      </ToastProvider>
     </DriveChromeProvider>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import {
-  IconAlertTriangle,
   IconClock,
   IconHome,
   IconSettings,
@@ -23,20 +22,13 @@ const ADMIN_LINKS = [
   { id: "activity", label: "Activity", href: "/admin/activity" },
 ] as const;
 
-type ActivityEntry = {
-  id: string;
-  action: string;
-  summary: string;
-  created_at: string | null;
-  is_error?: boolean;
-};
-
 type Props = {
   open: boolean;
   onClose: () => void;
   profile: Profile;
   showTrash: boolean;
   mode?: "employee" | "admin";
+  width?: number;
 };
 
 export function ExplorerNavPane({
@@ -45,6 +37,7 @@ export function ExplorerNavPane({
   profile,
   showTrash,
   mode = "employee",
+  width,
 }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -58,7 +51,6 @@ export function ExplorerNavPane({
   const onAdmin = pathname.startsWith("/admin");
 
   const [quickFolders, setQuickFolders] = useState<FsNode[]>([]);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,26 +67,6 @@ export function ExplorerNavPane({
     })();
     return () => {
       cancelled = true;
-    };
-  }, [libraryEpoch]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadActivity() {
-      try {
-        const res = await fetch("/api/activity/feed?limit=16");
-        const json = await res.json();
-        if (!res.ok || cancelled) return;
-        setActivity((json.entries as ActivityEntry[]) ?? []);
-      } catch {
-        if (!cancelled) setActivity([]);
-      }
-    }
-    void loadActivity();
-    const id = window.setInterval(() => void loadActivity(), 12_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
     };
   }, [libraryEpoch]);
 
@@ -119,6 +91,11 @@ export function ExplorerNavPane({
       <nav
         className={`xp-nav${open ? " is-open" : ""}`}
         aria-label="Explorer navigation"
+        style={
+          typeof width === "number"
+            ? ({ ["--sidebar-w" as string]: `${width}px` } as React.CSSProperties)
+            : undefined
+        }
       >
         {mode === "admin" || onAdmin ? (
           <div className="xp-nav-section">
@@ -207,30 +184,6 @@ export function ExplorerNavPane({
                   <span className="truncate">{f.name}</span>
                 </button>
               ))}
-            </div>
-
-            <div className="xp-nav-section xp-nav-activity">
-              <div className="xp-nav-label">Logs &amp; Activities</div>
-              {activity.length === 0 ? (
-                <p className="xp-nav-activity-empty">No recent activity</p>
-              ) : (
-                <ul className="xp-nav-activity-list">
-                  {activity.map((e) => (
-                    <li
-                      key={e.id}
-                      className={`xp-nav-activity-item${
-                        e.is_error ? " is-error" : ""
-                      }`}
-                      title={e.summary}
-                    >
-                      {e.is_error ? (
-                        <IconAlertTriangle size={12} stroke={1.75} />
-                      ) : null}
-                      <span className="truncate">{e.summary}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
             </div>
           </div>
         )}

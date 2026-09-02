@@ -32,6 +32,7 @@
   --win-selected: #e5f0fb;
   --win-selected-border: #cce4f7;
   --win-accent: #0078d4;
+  --win-accent-2: #0f7b6c;
   --folder-yellow: #ffca6b;
   --xp-fs-base: 14px;
   --xp-fs-ui: 13px;
@@ -4882,5 +4883,151 @@ select:focus-visible {
   .flat-input,
   .input {
     font-size: 16px !important;
+  }
+}
+
+/* Layout polish: accent-2 usage, resize, toasts, toolbar */
+.xp-server-pill.is-online,
+.xp-server-dot.is-online {
+  /* connected uses --win-accent-2 via inline style */
+}
+.xp-breadcrumb-current {
+  color: var(--win-accent-2);
+}
+.xp-resize-handle {
+  width: 4px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 2;
+  touch-action: none;
+}
+.xp-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1px;
+  width: 1px;
+  background: var(--win-border);
+}
+.xp-resize-handle:hover::after,
+.xp-resize-handle:active::after {
+  background: var(--win-accent-2);
+  width: 2px;
+  left: 1px;
+}
+.xp-details-panel {
+  width: var(--details-w, 280px);
+  flex-shrink: 0;
+}
+.xp-details-panel .xp-details {
+  width: 100%;
+  height: 100%;
+  border-left: none;
+}
+.xp-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--win-border);
+  background: var(--win-surface);
+  flex-wrap: nowrap;
+}
+.xp-filter-input {
+  width: min(280px, 42vw);
+  flex-shrink: 1;
+}
+.xp-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.xp-arrange-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.xp-arrange-select {
+  height: 30px;
+  border: 1px solid var(--win-border);
+  border-radius: 5px;
+  background: var(--win-bg);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+}
+.xp-toast-stack {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 120;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  width: min(calc(100vw - 32px), 22rem);
+  pointer-events: none;
+}
+.xp-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--win-border);
+  background: var(--win-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  font-size: 13px;
+  color: var(--ink);
+}
+.xp-toast-success {
+  border-color: color-mix(in srgb, var(--win-accent-2) 45%, var(--win-border));
+}
+.xp-toast-success .xp-toast-icon {
+  color: var(--win-accent-2);
+}
+.xp-toast-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--win-border));
+}
+.xp-toast-error .xp-toast-icon {
+  color: var(--danger);
+}
+.xp-toast-info .xp-toast-icon {
+  color: var(--win-accent);
+}
+.xp-toast-msg {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+.xp-toast-close {
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+}
+@media (max-width: 900px) {
+  .xp-resize-handle {
+    display: none;
+  }
+  .xp-toolbar-row {
+    flex-wrap: wrap;
+  }
+  .xp-toolbar-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
   }
 }

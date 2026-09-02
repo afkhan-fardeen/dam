@@ -31,8 +31,16 @@ import { ExplorerNavPane } from "@/components/explorer/ExplorerNavPane";
 import { ExplorerDetails } from "@/components/explorer/ExplorerDetails";
 import { Button } from "@/components/ui/Button";
 import { navigateWithTransition } from "@/components/ui/useViewTransitionNavigate";
+import { useToast } from "@/components/ui/Toast";
 import { readLastPlace } from "@/lib/lastPlace";
-import { readViewMode, writeViewMode } from "@/lib/uiPrefs";
+import {
+  PANE_LIMITS,
+  readDetailsWidth,
+  readNavWidth,
+  writeDetailsWidth,
+  writeNavWidth,
+  writeViewMode,
+} from "@/lib/uiPrefs";
 
 type DriveShellProps = {
   spaces: Space[];
@@ -68,6 +76,7 @@ export function DriveShell({
     setExplorer,
     setSelectedNode,
   } = useDriveChrome();
+  const toast = useToast();
 
   const view = searchParams.get("view") || "files";
   const onHome = pathname === "/";
@@ -87,8 +96,14 @@ export function DriveShell({
   const showTrash = true;
 
   const [query, setQuery] = useState(searchParams.get("q") || "");
-  const [actionToast, setActionToast] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [navWidth, setNavWidth] = useState(220);
+  const [detailsWidth, setDetailsWidth] = useState(280);
+
+  useEffect(() => {
+    setNavWidth(readNavWidth());
+    setDetailsWidth(readDetailsWidth());
+  }, []);
 
   const historyRef = useRef<{ stack: string[]; index: number }>({
     stack: [],
@@ -137,12 +152,6 @@ export function DriveShell({
   useEffect(() => {
     setQuery(searchParams.get("q") || "");
   }, [searchParams]);
-
-  useEffect(() => {
-    if (!actionToast) return;
-    const id = window.setTimeout(() => setActionToast(null), 2800);
-    return () => window.clearTimeout(id);
-  }, [actionToast]);
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -252,13 +261,11 @@ export function DriveShell({
     setUploadSpaceName(uploadSpace?.name || last?.spaceName || "Main Drive");
   }, [uploadOpen, uploadFolderId, uploadSpace?.name]);
 
-  const identityTitle = showExplorerChrome
-    ? explorer.title
-    : onAdmin
-      ? "Admin"
-      : onSearch
-        ? "Search"
-        : "Main Drive";
+  const identityTitle = onAdmin
+    ? "Admin"
+    : onSearch
+      ? "Search"
+      : "Company Asset Platform";
 
   const selectedCount = explorer.selectedIds?.length || (explorer.selected ? 1 : 0);
   const statusText =
@@ -287,23 +294,64 @@ export function DriveShell({
         : "Server offline";
   const serverColor =
     serverStatus === "connected"
-      ? "var(--ok)"
+      ? "var(--win-accent-2)"
       : serverStatus === "checking"
         ? "var(--ink-faint)"
         : "var(--danger)";
 
   function onUploadClick() {
     if (!canUp) {
-      if (!online) setActionToast("File server unavailable");
-      else setActionToast("Upload not available here");
+      if (!online) toast.error("File server unavailable");
+      else toast.info("Upload not available here");
       return;
     }
-    // Prefer workspace file picker (flat drive); modal if spaces exist
     if (shellUploadSpaceId) {
       openUpload(shellUploadSpaceId);
     } else {
       requestUpload();
     }
+  }
+
+  function startResize(
+    side: "nav" | "details",
+    e: React.PointerEvent<HTMLDivElement>,
+  ) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = side === "nav" ? navWidth : detailsWidth;
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    let latest = startW;
+
+    function onMove(ev: PointerEvent) {
+      const dx = ev.clientX - startX;
+      if (side === "nav") {
+        latest = Math.min(
+          PANE_LIMITS.navMax,
+          Math.max(PANE_LIMITS.navMin, startW + dx),
+        );
+        setNavWidth(latest);
+      } else {
+        latest = Math.min(
+          PANE_LIMITS.detailsMax,
+          Math.max(PANE_LIMITS.detailsMin, startW - dx),
+        );
+        setDetailsWidth(latest);
+      }
+    }
+    function onUp(ev: PointerEvent) {
+      try {
+        el.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (side === "nav") writeNavWidth(latest);
+      else writeDetailsWidth(latest);
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   }
 
   return (
@@ -472,13 +520,23 @@ export function DriveShell({
 
       <div className="xp-body">
         {showSidebar ? (
-          <ExplorerNavPane
-            open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-            profile={profile}
-            showTrash={showTrash}
-            mode={onAdmin ? "admin" : "employee"}
-          />
+          <>
+            <ExplorerNavPane
+              open={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+              profile={profile}
+              showTrash={showTrash}
+              mode={onAdmin ? "admin" : "employee"}
+              width={navWidth}
+            />
+            <div
+              className="xp-resize-handle xp-resize-nav"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize navigation"
+              onPointerDown={(e) => startResize("nav", e)}
+            />
+          </>
         ) : null}
 
         <div className="xp-main">
@@ -530,7 +588,15 @@ export function DriveShell({
               onClick={() => setSelectedNode(null)}
             />
             <div
+              className="xp-resize-handle xp-resize-details"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize details"
+              onPointerDown={(e) => startResize("details", e)}
+            />
+            <div
               className="xp-details-panel relative"
+              style={{ width: detailsWidth }}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
             >
@@ -563,15 +629,6 @@ export function DriveShell({
           </>
         ) : null}
       </div>
-
-      {actionToast ? (
-        <div
-          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[55] surface flat-fade px-4 py-2.5 type-caption text-[var(--ink)] max-w-[min(90vw,20rem)] text-center"
-          role="status"
-        >
-          {actionToast}
-        </div>
-      ) : null}
 
       <UploadProgressPanel />
 

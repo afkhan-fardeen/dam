@@ -24,6 +24,7 @@ import {
   type ExplorerSortKey,
   type ExplorerSortPrefs,
 } from "@/lib/uiPrefs";
+import { useToast } from "@/components/ui/Toast";
 
 type Props = {
   isAdmin: boolean;
@@ -69,6 +70,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
   const searchParams = useSearchParams();
   const folderId = searchParams.get("folder");
   const view = searchParams.get("view") || "files";
+  const toast = useToast();
   const {
     upsertJob,
     removeJob,
@@ -407,6 +409,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     const json = await res.json();
     if (!res.ok) {
       setError(json.error || "Could not create folder");
+      toast.error(json.error || "Could not create folder");
       return;
     }
     setNewFolderOpen(false);
@@ -416,6 +419,7 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
     if (json.node) {
       setNodes((prev) => [...prev, json.node as FsNode]);
     }
+    toast.success(`Created “${name}”`);
     notifyLibraryChange();
     void load({ quiet: true });
   }
@@ -920,43 +924,55 @@ export function DriveWorkspace({ isAdmin, profileName }: Props) {
           placeholder="Filter in this folder…"
           aria-label="Filter"
         />
-        <div className="xp-arrange" role="group" aria-label="Arrange by">
-          {(
-            [
-              ["name", "Name"],
-              ["date", "Date"],
-              ["kind", "Kind"],
-              ["size", "Size"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              className={`xp-cmd${sortPrefs.key === key ? " is-active" : ""}`}
-              onClick={() => updateSort(key)}
+        <div className="xp-toolbar-actions">
+          <label className="xp-arrange-label">
+            <span>Arrange</span>
+            <select
+              className="xp-arrange-select"
+              value={`${sortPrefs.key}:${sortPrefs.asc ? "asc" : "desc"}`}
+              aria-label="Arrange by"
+              onChange={(e) => {
+                const [key, dir] = e.target.value.split(":") as [
+                  ExplorerSortKey,
+                  "asc" | "desc",
+                ];
+                const next = {
+                  ...sortPrefs,
+                  key,
+                  asc: dir === "asc",
+                };
+                setSortPrefs(next);
+                writeExplorerSort(next);
+              }}
             >
-              {label}
-              {sortPrefs.key === key ? (sortPrefs.asc ? " ↑" : " ↓") : ""}
-            </button>
-          ))}
-        </div>
-        {inTrash ? (
+              <option value="name:asc">Name (A–Z)</option>
+              <option value="name:desc">Name (Z–A)</option>
+              <option value="date:desc">Date (newest)</option>
+              <option value="date:asc">Date (oldest)</option>
+              <option value="kind:asc">Kind (A–Z)</option>
+              <option value="kind:desc">Kind (Z–A)</option>
+              <option value="size:desc">Size (largest)</option>
+              <option value="size:asc">Size (smallest)</option>
+            </select>
+          </label>
           <button
             type="button"
             className="xp-cmd"
-            disabled={nodes.length === 0}
-            onClick={() => setEmptyTrashOpen(true)}
+            onClick={() => applySelection(orderedIdsRef.current)}
           >
-            Empty Trash
+            Select all
           </button>
-        ) : null}
-        <button
-          type="button"
-          className="xp-cmd"
-          onClick={() => applySelection(orderedIdsRef.current)}
-        >
-          Select all
-        </button>
+          {inTrash ? (
+            <button
+              type="button"
+              className="xp-cmd"
+              disabled={nodes.length === 0}
+              onClick={() => setEmptyTrashOpen(true)}
+            >
+              Empty Trash
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {error ? (
